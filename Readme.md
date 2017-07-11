@@ -42,4 +42,5 @@ Following six parameters need to be set (in that order)
 - Edit `runTransfer.py` and add another `SimType` around line 50.
 - The field variables are the strings that are availble for that particular dump within it, i.e.
 they should be present in the `ds.field_list` array.
+- The `loadPath` variable should be formated in the same way yt would load the datasta. It is eventually used in `yt.load(loadPath)`
 
