@@ -52,6 +52,7 @@ elif SimType == "Athena":
     rhoField = "density"
     velFields = ["velocity_x","velocity_y","velocity_z"]
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
+    accFields = ['acceleration_x','acceleration_y','acceleration_z']
     loadPath = "id0/Turb." + ID + ".vtk"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
