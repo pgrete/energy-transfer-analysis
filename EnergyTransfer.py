@@ -28,12 +28,12 @@ class EnergyTransfer:
         self.FT_U = None
         
         if self.comm.Get_rank() == 0:
-            print """!!! WARNING - CURRENT PITFALLS !!!
+            print("""!!! WARNING - CURRENT PITFALLS !!!
             - data units are ignored
             - data is assumed to live on a 3d uniform grid with L = 1
             - for the FFT L = 2 pi is implicitly assumed to work with integer wavenumbers
             - data is assumed to be split equally on axis 0 among MPI processes            
-            """
+            """)
         
         N = np.array([RES,RES,RES], dtype=int)
         # using L = 2pi as we work (e.g. when binning) with integer wavenumbers

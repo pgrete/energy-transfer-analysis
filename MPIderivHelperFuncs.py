@@ -43,7 +43,7 @@ def MPIderiv2(comm,var,dim):
         p1 = tmp[sl_c,sl_c,sl_p1]
         m1 = tmp[sl_c,sl_c,sl_m1]
     else:
-        print "watch out for dimension!"
+        print("watch out for dimension!")
                 
     del tmp 
             
