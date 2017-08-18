@@ -116,7 +116,10 @@ if comm.Get_rank() == 0:
 
     if os.path.isfile(DumpFile):
         print("Reading previous transfer file")
-        Result = pickle.load(open(DumpFile,"rb"))
+        if sys.version_info[0] < 3:
+            Result = pickle.load(open(DumpFile,"rb"))
+        else:
+            Result = pickle.load(open(DumpFile,"rb"),encoding='latin1')
 
     else:
         Result = {}

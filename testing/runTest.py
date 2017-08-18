@@ -19,13 +19,12 @@ TestFile = sys.argv[2]
 
 
 # In[18]:
-
-Ref = pickle.load(open(RefFile,"rb"))
-
-
-# In[19]:
-
-Test = pickle.load(open(TestFile,"rb"))
+if sys.version_info[0] < 3:
+    Ref = pickle.load(open(RefFile,"rb"))
+    Test = pickle.load(open(TestFile,"rb"))
+else:
+    Ref = pickle.load(open(RefFile,"rb"),encoding='latin1')
+    Test = pickle.load(open(TestFile,"rb"),encoding='latin1')
 
 
 # In[31]:
