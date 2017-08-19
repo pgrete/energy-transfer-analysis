@@ -1,5 +1,13 @@
-import numpy as np
 from mpi4py import MPI
+
+comm  = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+comm.Barrier()
+TimeStart = MPI.Wtime()
+
+import numpy as np
 from EnergyTransfer import EnergyTransfer
 from IOhelperFuncs import readAllFieldsWithYT
 import time
@@ -15,9 +23,6 @@ FluidType = sys.argv[5] # hydro or mhd
 BinType = sys.argv[6] # lin or log
 
 
-comm  = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
 
 rhoField = None
 velFields = None
@@ -70,11 +75,26 @@ if needAccFields and accFields is None:
 if not needAccFields:
     accFields = None
 
+
+
+TimeDoneStart = MPI.Wtime() - TimeStart
+TimeDoneStart = comm.gather(TimeDoneStart)
+
+if rank == 0:
+    print("Imports and startup done in %.3g +/- %.3g" % (np.mean(TimeDoneStart),np.std(TimeDoneStart)))
+    sys.stdout.flush()
+
+TimeDoneStart = MPI.Wtime() 
+
 rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
     rhoField,velFields,magFields,accFields)
 
+TimeDoneReading = MPI.Wtime() - TimeDoneStart
+TimeDoneReading = comm.gather(TimeDoneReading)
 
-comm.Barrier()
+if rank == 0:
+    print("Reading done in %.3g +/- %.3g" % (np.mean(TimeDoneReading),np.std(TimeDoneReading)))
+    sys.stdout.flush()
 
 if BinType == "Lin":
 	Bins = np.concatenate((np.linspace(0.5,Res/2-0.5,Res/2,endpoint=True),[float(Res)/2.*np.sqrt(3)]))
@@ -112,7 +132,7 @@ Result[formalism][term][method][target wavenumber][source wavenumber]
 |--| etc.
 """
 
-if comm.Get_rank() == 0:
+if rank == 0:
     DumpFile = str(ID).zfill(4) + "-" + Terms + "-" + BinType + "-" + str(Res) + ".pkl"
 
     if os.path.isfile(DumpFile):

@@ -3,6 +3,7 @@ from mpiFFT4py.slab import R2C
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX
 import time
 import pickle
+import sys
 
 class EnergyTransfer:
 
@@ -34,6 +35,8 @@ class EnergyTransfer:
             - for the FFT L = 2 pi is implicitly assumed to work with integer wavenumbers
             - data is assumed to be split equally on axis 0 among MPI processes            
             """)
+
+        TimeStart = MPI.Wtime()
         
         N = np.array([RES,RES,RES], dtype=int)
         # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
@@ -42,6 +45,14 @@ class EnergyTransfer:
 
         localK = self.FFT.get_local_wavenumbermesh(scaled=True)
         self.localKmag = np.linalg.norm(localK,axis=0)
+
+        TimeDoneSetup = MPI.Wtime() - TimeStart
+        TimeDoneSetup = self.comm.gather(TimeDoneSetup)
+
+        if self.comm.Get_rank() == 0:
+            print("Setup up FFT and wavenumbers done in %.3g +/- %.3g" %
+                (np.mean(TimeDoneSetup), np.std(TimeDoneSetup)))
+            sys.stdout.flush()
         
         
     def getShellX(self,FTquant,Low,Up):

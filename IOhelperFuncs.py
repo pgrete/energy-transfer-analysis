@@ -1,6 +1,7 @@
 import yt
 import numpy as np
 from mpi4py import MPI
+import sys
 
 comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
