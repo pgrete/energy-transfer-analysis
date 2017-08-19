@@ -9,7 +9,7 @@ TimeStart = MPI.Wtime()
 
 import numpy as np
 from EnergyTransfer import EnergyTransfer
-from IOhelperFuncs import readAllFieldsWithYT
+from IOhelperFuncs import readAllFieldsWithYT, readAllFieldsWithHDF 
 import time
 import pickle
 import sys
@@ -46,7 +46,9 @@ if "Forc" in SplitTerms:
 if len(thisTerms) == 0:
 	print("Unknown Terms... FAIL")
 	sys.exit(1)
-        
+
+order = "unset"
+
 if SimType == "Enzo":
     rhoField = "Density"
     velFields = ["x-velocity","y-velocity","z-velocity"]
@@ -59,6 +61,13 @@ elif SimType == "Athena":
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     loadPath = "id0/Turb." + ID + ".vtk"
+elif SimType == "AthenaHDF":
+    rhoField = "density"
+    velFields = ["velocity_x","velocity_y","velocity_z"]
+    magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
+    accFields = ['acceleration_x','acceleration_y','acceleration_z']
+    loadPath = ID
+    order = "F"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)
@@ -85,9 +94,12 @@ if rank == 0:
     sys.stdout.flush()
 
 TimeDoneStart = MPI.Wtime() 
-
-rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
-    rhoField,velFields,magFields,accFields)
+if "HDF" in SimType:
+    rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
+        rhoField,velFields,magFields,accFields,order)
+else:
+    rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
+        rhoField,velFields,magFields,accFields)
 
 TimeDoneReading = MPI.Wtime() - TimeDoneStart
 TimeDoneReading = comm.gather(TimeDoneReading)
