@@ -3,7 +3,8 @@ import numpy as np
 import time
 import h5py as h5
 import sys
-
+import os
+import gc
 
 
 Type = sys.argv[1]
@@ -11,7 +12,7 @@ Id  = sys.argv[2]
 RES = int(sys.argv[3])
 
 
-yt.enable_parallelism()
+#yt.enable_parallelism()
 start=time.time()
 
 if Type[:6] == "Athena":
@@ -42,14 +43,51 @@ else:
     print("Unknown sim Type in param 1")
     sys.exit(1)
 
-all_data = ds.covering_grid(level=0, left_edge=[0,0.0,0.0],
-    dims=ds.domain_dimensions)
+Sizes = {
+    512  : [536873056,67111008],
+    1024 : [4294969440,536873056],
+    2048 : [34359740512, 4294969440],
+}
+
+#all_data = ds.covering_grid(level=0, left_edge=[0,0.0,0.0],
+#    dims=ds.domain_dimensions)
 
 #if yt.is_root():
-for field in yt.parallel_objects(Fields, -1):
+#for field in yt.parallel_objects(Fields, -1):
+for field in Fields:
+
+    skip = True
+    if not (os.path.exists("%s/%s-%i.hdf5"%(DirId,field,RES))):
+        skip = False
+        print("%s/%s-%i.hdf5 misses "%(DirId,field,RES))
+    elif not (int(os.path.getsize("%s/%s-%i.hdf5"%(DirId,field,RES))) == Sizes[RES][0]):
+        skip = False
+        print("%s/%s-%i.hdf5 wrong size act %d versus %d "%(DirId,field,RES,int(os.path.getsize("%s/%s-%i.hdf5"%(DirId,field,RES))),Sizes[RES][0]))
+    
+    if not(os.path.exists("%s/%s-%i.hdf5"%(DirId,field,int(RES/2)))):
+        skip = False
+        print("%s/%s-%i.hdf5 misses "%(DirId,field,int(RES/2)))
+    elif not(int(os.path.getsize("%s/%s-%i.hdf5"%(DirId,field,int(RES/2)))) == Sizes[RES][1]):
+        skip = False
+        print("%s/%s-%i.hdf5 wrong size act %d versus %d "%(DirId,field,int(RES/2),os.path.getsize("%s/%s-%i.hdf5"%(DirId,field,int(RES/2))),Sizes[RES][1]))
+
+    sys.stdout.flush()
+    
+    if skip:
+        print("Done with %s. Continue..." % field)
+        continue
+
+    all_data = ds.covering_grid(level=0, left_edge=[0,0.0,0.0],
+        dims=ds.domain_dimensions, fields = [("athena",field)])
+    
+    origField = all_data[("athena",field)].astype("float32")
+    del all_data
+
+    # call gargabe collector explicitly as need all available mem immediately
+    gc.collect()
 
     # transpose here, so that data get stored column major later on (as read by Enzo)
-    origField = np.float32(all_data[field].T)
+    origField = origField.T
 
 
     hdf5File = h5.File("%s/%s-%i.hdf5"%(DirId,field,RES), 'w')
@@ -82,6 +120,8 @@ for field in yt.parallel_objects(Fields, -1):
     
     hdf5File.close()
 
+    del origField, dataSet, destField, hdf5File
+    print("%s done after (%.2f sec)" % (field, time.time() - start))
+
 
 print("total execution time (%.2f sec)" % (time.time() - start))
-

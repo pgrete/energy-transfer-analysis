@@ -3,22 +3,24 @@
 
 BINTYPE="Log"
 
-#RUNTYPE="JustShrink"
-RUNTYPE="FlowAndEnTrans"
+RUNTYPE="JustShrink"
+#RUNTYPE="FlowAndEnTrans"
 
 
 RUNS=(
-"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-1.00-3.00" 1024 
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-0.50-3.00" 512 
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-1.00-3.00" 512   
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-0.50-3.00" 512  
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-0.50-3.00" 512  
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-1.00-3.00" 512   
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.750-1.000-0.50-3.00" 512   
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-1.00-3.00" 512  
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-1.00-3.00" 512  
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-3.00" 512   
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.750-1.000-1.00-3.00" 512  
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-1.00-3.00" 1024 
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-0.50-6.00" 1024 
+"Athena" "/nobackup/pgrete/run-stripe1/2048-2.0-0.500-1.000-0.50-6.00" 2048 
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-0.50-3.00" 512 
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-1.00-3.00" 512   
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-0.50-3.00" 512  
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-0.50-3.00" 512  
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-1.00-3.00" 512   
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.750-1.000-0.50-3.00" 512   
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-1.00-3.00" 512  
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-1.00-3.00" 512  
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-3.00" 512   
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.750-1.000-1.00-3.00" 512  
 )
 
 
@@ -42,6 +44,11 @@ do
         NMPI=28
         WALLTIME="2:0:0"
         FSIZE=4097
+      elif [[ $RES == 2048 ]]; then
+        NODETYPE="has"
+        NMPI=24
+        WALLTIME="8:0:0"
+        FSIZE=32769
       else
         echo "unknown RES: $RES"
         exit 1
@@ -55,10 +62,10 @@ do
         NUMNODES=6
         NPROC=128
       elif [[ $RES == 1024 ]]; then
-        NODETYPE="bro"
-        NMPI=28
-        WALLTIME="6:0:0"
-        NUMNODES=10
+        NODETYPE="has"
+        NMPI=24
+        WALLTIME="6:30:0"
+        NUMNODES=11
         NPROC=256 
       else
         echo "unknown RES: $RES"
@@ -125,7 +132,7 @@ fi
 if [ -f ${DUMP}-All-Forc-Pres-${BINTYPE}-${RES}.pkl ]; then
 #if [ -f ${DUMP}-PSMagEn-${RES}.npy ]; then
 #if [ -f ${DUMP}-Forc-Pres-${BINTYPE}-${RES}.pkl ]; then
-echo $BNAME $DUMP done 
+#echo $BNAME $DUMP done 
 continue
 fi
 
@@ -152,7 +159,8 @@ if [[ $RUNTYPE == "JustShrink" ]]; then
 mkdir ${DUMP}
 lfs setstripe -c 4 ${DUMP}
 date
-mpiexec -np 1 python ~/src/energy-transfer-analysis/scripts/shrink.py Athena ${DUMP} ${RES}
+python ~/src/energy-transfer-analysis/scripts/shrink.py Athena ${DUMP} ${RES}
+python ~/src/energy-transfer-analysis/scripts/delVtk.py Athena ${DUMP} ${RES}
 date
 " >> tmp.sh
     
