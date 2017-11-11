@@ -70,6 +70,12 @@ if SimType == "AthenaHDF":
     accFields = None
     loadPath = ID
     order = "F"
+elif SimType == "FlashHDF":
+    rhoField = "dens"
+    velFields = ["velx","vely","velz"]
+    accFields = None
+    loadPath = ID
+    order = "C"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)
@@ -91,6 +97,8 @@ if rank == 0:
 TimeDoneStart = MPI.Wtime() 
 rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
     rhoField,velFields,magFields,accFields,order)
+
+ID = 72
 
 TimeDoneReading = MPI.Wtime() - TimeDoneStart
 TimeDoneReading = comm.gather(TimeDoneReading)
@@ -122,7 +130,8 @@ del sqrtRho
 
 FT_W = np.zeros((3,) + FFT.complex_shape(),dtype =  FFT.complex)
 for i in range(3):
-    FT_W[i] = FFT.fftn(W[i], FT_W[i])
+    #FT_W[i] = FFT.fftn(W[i], FT_W[i])
+    FT_W[i] = FFT.fftn(U[i], FT_W[i])
         
 FTKinEn = 0.5 * np.sum(np.abs(FT_W)**2.,axis=0)
 PSKinEn = normedSpec(localKmag.reshape(-1),FTKinEn.reshape(-1))

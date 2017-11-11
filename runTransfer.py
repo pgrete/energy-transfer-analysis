@@ -68,6 +68,11 @@ elif SimType == "AthenaHDF":
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     loadPath = ID
     order = "F"
+elif SimType == "FlashHDF":
+    rhoField = "dens"
+    velFields = ["velx","vely","velz"]
+    loadPath = ID
+    order = "C"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)
@@ -145,7 +150,8 @@ Result[formalism][term][method][target wavenumber][source wavenumber]
 """
 
 if rank == 0:
-    DumpFile = str(ID).zfill(4) + "-" + Terms + "-" + BinType + "-" + str(Res) + ".pkl"
+    #DumpFile = str(ID).zfill(4) + "-" + Terms + "-" + BinType + "-" + str(Res) + ".pkl"
+    DumpFile = ID.split('/')[-1] + "-" + Terms + "-" + BinType + "-" + str(Res) + ".pkl"
 
     if os.path.isfile(DumpFile):
         print("Reading previous transfer file")

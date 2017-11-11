@@ -67,18 +67,41 @@ def readAllFieldsWithYT(loadPath,Res,
     return rho, U, B, Acc, rho
 
 def readOneFieldWithHDF(loadPath,FieldName,Res,order):
-    Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
+    Filename = loadPath # + '/' + FieldName + '-' + str(Res) + '.hdf5'
 
     h5Data = h5py.File(Filename, 'r')[FieldName]
 
-    chunkSize = Res/size
+    #chunkSize = Res/size
+    chunkSize = 256
     startIdx = int(rank * chunkSize)
     endIdx = int((rank + 1) * chunkSize)
-    if endIdx == Res:                
+    if endIdx == 4096:                
         endIdx = None
 
+    print(h5Data.shape)
+
+    data = np.zeros((157,2512,2512),dtype=np.float64)
+
     if order == 'C':
-        data = np.float64(h5Data[0,startIdx:endIdx,:,:])     
+        #data = np.float64(h5Data[startIdx:endIdx,:,:,:]).reshape((157,2512,2512))    
+
+        #data = np.float64(h5Data[startIdx:endIdx,:,:,:])
+
+        for idx in range(16):
+            for idy in range(16):
+                thisStartIdx = idx * 157
+                thisEndIdx = (idx+1) * 157
+                if thisEndIdx == 2512:
+                    thisEndIdx = None
+
+                thisStartIdy = idy * 157
+                thisEndIdy = (idy+1) * 157
+                if thisEndIdy == 2512:
+                    thisEndIdy = None
+
+
+                data[:,thisStartIdx:thisEndIdx,thisStartIdy:thisEndIdy] = h5Data[startIdx+idx*16+idy,:,:,:]
+
     elif order == 'F':                    
         data = np.float64(h5Data[0,:,:,startIdx:endIdx].T)
 
