@@ -10,8 +10,8 @@ import gc
 Type = sys.argv[1]
 Id  = sys.argv[2]
 RES = int(sys.argv[3])
-
-
+Fluid = sys.argv[4]
+Forced = sys.argv[5]
 #yt.enable_parallelism()
 start=time.time()
 
@@ -19,9 +19,13 @@ if Type[:6] == "Athena":
     ds = yt.load("id0/Turb." + Id + ".vtk")
     DirId = Id
     Fields = ["density","velocity_x","velocity_y","velocity_z",
-    "cell_centered_B_x","cell_centered_B_y","cell_centered_B_z",
-    "acceleration_x","acceleration_y","acceleration_z",
     ]
+    if Forced == 'forced':
+        Fields += ["acceleration_x","acceleration_y","acceleration_z"]
+    if Fluid == 'mhd':
+        Fields += ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
+
+
 
 elif Type[:4] == "Enzo":
     ds = yt.load("DD" + Id + "/data" + Id)

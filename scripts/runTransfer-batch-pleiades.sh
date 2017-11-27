@@ -2,15 +2,19 @@
 
 
 BINTYPE="Log"
+#FLUID='hydro'
+FLUID='mhd'
 
-RUNTYPE="JustShrink"
-#RUNTYPE="FlowAndEnTrans"
+#RUNTYPE="JustShrink"
+RUNTYPE="FlowAndEnTrans"
 
 
 RUNS=(
 #"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-1.00-3.00" 1024 
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-6.00" 512 
 #"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-0.50-6.00" 1024 
-"Athena" "/nobackup/pgrete/run-stripe1/2048-2.0-0.500-1.000-0.50-6.00" 2048 
+#"Athena" "/nobackup/pgrete/run-stripe1/2048-2.0-0.500-1.000-0.50-6.00" 2048 
+#"Athena" "/nobackup/pgrete/run-stripe1/2048-2.0-0.500-1.000-0.50-6.00" 1024 
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-0.50-3.00" 512 
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-1.00-3.00" 512   
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-0.50-3.00" 512  
@@ -21,6 +25,46 @@ RUNS=(
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-1.00-3.00" 512  
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-3.00" 512   
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.750-1.000-1.00-3.00" 512  
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-0.25--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-0.50--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-1.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-16.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-2.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-4.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-0.500-1.000-8.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-0.25--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-0.50--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-1.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-16.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-2.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-4.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/hydro/512-2.0-1.000-1.000-8.00--1.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-0.50-3.00-F2" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-1.00-3.00-F2" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-high" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-high2" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-high4" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-high6" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.062-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.062-1.00-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f7" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f14" 512
+"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00" 512
+"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-delta-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.125-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.250-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.500-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-0.50-high8" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-4.00-high" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-4.00-high2" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-4.00-high6" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-0.25-b1e6" 1024
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-0.50-b1e6" 1024
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-1.00-b1e6" 1024
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-2.00-b1e6" 1024
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-4.00-b1e6" 1024
+#"Athena" "/nobackup/pgrete/run-stripe1/1024-2.0-0.500-1.000-8.00-b1e6" 1024
 )
 
 
@@ -56,9 +100,10 @@ do
 
     elif [[ $RUNTYPE == "FlowAndEnTrans" ]]; then
       if [[ $RES == 512 ]]; then
-        NODETYPE="has"
+        NODETYPE="bro"
         NMPI=24
-        WALLTIME="1:30:0"
+        WALLTIME="3:00:0"
+#        WALLTIME="2:30:0"
         NUMNODES=6
         NPROC=128
       elif [[ $RES == 1024 ]]; then
@@ -79,6 +124,7 @@ do
     cd $ROOTDATADIR
 
 		for DUMP in `seq -w 0 1 0100`; do
+#		for DUMP in `seq -w 0 3 0500`; do
 #		for DUMP in `seq -w 00 1 0050`; do
 #		for DUMP in 0050; do
     
@@ -136,7 +182,14 @@ if [ -f ${DUMP}-All-Forc-Pres-${BINTYPE}-${RES}.pkl ]; then
 continue
 fi
 
+#if [ ! -f ${PREFIX}${DUMP}/acceleration_z-${RES}.hdf5 ]; then
+#  echo missing $BNAME $DUMP 
+#  continue
+#fi
+
+
 echo $BNAME $DUMP doing now
+#continue
 
 echo "
 #!/bin/bash
@@ -154,23 +207,23 @@ cd $ROOTDATADIR
 
 " > tmp.sh
 
-if [[ $RUNTYPE == "JustShrink" ]]; then
+#if [[ $RUNTYPE == "JustShrink" ]]; then
   echo "
 mkdir ${DUMP}
 lfs setstripe -c 4 ${DUMP}
 date
-python ~/src/energy-transfer-analysis/scripts/shrink.py Athena ${DUMP} ${RES}
-python ~/src/energy-transfer-analysis/scripts/delVtk.py Athena ${DUMP} ${RES}
+python ~/src/energy-transfer-analysis/scripts/shrink.py Athena ${DUMP} ${RES} ${FLUID} forced
+python ~/src/energy-transfer-analysis/scripts/delVtk.py Athena ${DUMP} ${RES} ${FLUID} forced
 date
 " >> tmp.sh
     
-elif [[ $RUNTYPE == "FlowAndEnTrans" ]]; then
+if [[ $RUNTYPE == "FlowAndEnTrans" ]]; then
   echo "
 date
-mpiexec -np $NPROC python ~/src/energy-transfer-analysis/runFlowQuant.py ${DUMP} ${RES} AthenaHDF mhd 
+mpiexec -np $NPROC python ~/src/energy-transfer-analysis/runFlowQuant.py ${DUMP} ${RES} AthenaHDF ${FLUID} 
 
 date
-mpiexec -np $NPROC python ~/src/energy-transfer-analysis/runTransfer.py $DUMP All-Forc-Pres ${RES} AthenaHDF  mhd $BINTYPE 
+mpiexec -np $NPROC python ~/src/energy-transfer-analysis/runTransfer.py $DUMP All-Forc-Pres ${RES} AthenaHDF  ${FLUID} $BINTYPE 
 date
 " >> tmp.sh
 
