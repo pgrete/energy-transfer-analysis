@@ -55,6 +55,13 @@ if SimType == "Enzo":
     magFields = ["Bx","By","Bz"]
     accFields = ['x-acceleration','y-acceleration','z-acceleration']
     loadPath = "DD" + ID + "/data" + ID
+elif SimType == "EnzoHDF":
+    rhoField = "Density"
+    velFields = ["x-velocity","y-velocity","z-velocity"]
+    magFields = ["Bx","By","Bz"]
+    accFields = ['x-acceleration','y-acceleration','z-acceleration']
+    loadPath = "DD" + ID 
+    order = "F"
 elif SimType == "Athena":
     rhoField = "density"
     velFields = ["velocity_x","velocity_y","velocity_z"]

@@ -66,6 +66,41 @@ def readAllFieldsWithYT(loadPath,Res,
         print("WARNING: rememer assuming isothermal EOS with c_s = 1, i.e. P = rho hardcoded")
     return rho, U, B, Acc, rho
 
+# mmet by https://gist.github.com/rossant/7b4704e8caeb8f173084
+def _mmap_h5(path, h5path):
+    with h5py.File(path) as f:
+        ds = f[h5path]
+        # We get the dataset address in the HDF5 fiel.
+        offset = ds.id.get_offset()
+        # We ensure we have a non-compressed contiguous array.
+        assert ds.chunks is None
+        assert ds.compression is None
+        assert offset > 0
+        dtype = ds.dtype
+        shape = ds.shape
+    arr = np.memmap(path, mode='r', shape=shape, offset=offset, dtype=dtype)
+    return arr
+
+
+
+def readOneFieldWithHDFmmap(loadPath,FieldName,Res,order):
+    Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
+
+    chunkSize = Res/size
+    startIdx = int(rank * chunkSize)
+    endIdx = int((rank + 1) * chunkSize)
+    if endIdx == Res:                
+        endIdx = None
+
+    if order == 'F':                    
+        data = np.float64(_mmap_h5(Filename, '/' + FieldName)[0,:,:,startIdx:endIdx].T)
+    else:
+        print('readOneFieldWithHDFmmap: Order %s not tested yet. Abort...' % order)
+        sys.exit(1)
+
+
+    return np.ascontiguousarray(data)
+
 def readOneFieldWithHDF(loadPath,FieldName,Res,order):
     Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
 
@@ -86,7 +121,7 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
     
 
 def readAllFieldsWithHDF(loadPath,Res,
-    rhoField,velFields,magFields,accFields,order):
+    rhoField,velFields,magFields,accFields,order,useMMAP=False):
     """
     Reads all fields using the HDF5. Data is read in parallel.
 
@@ -100,34 +135,39 @@ def readAllFieldsWithHDF(loadPath,Res,
         print("For safety reasons you have to specify the order (row or column major) for your data.")
         sys.exit(1)
         
-    FinalShape = (Res//size,Res,Res)   
+    FinalShape = (Res//size,Res,Res)  
+
+    if useMMAP:
+        readOneFieldWithX = readOneFieldWithHDFmmap
+    else:
+        readOneFieldWithX = readOneFieldWithHDF
     
     if rhoField is not None:
-        rho = readOneFieldWithHDF(loadPath,rhoField,Res,order)
+        rho = readOneFieldWithX(loadPath,rhoField,Res,order)
     else:
         rho = np.ones(FinalShape,dtype=np.float64) 
     
     if velFields is not None:
         U = np.zeros((3,) + FinalShape,dtype=np.float64)
-        U[0] = readOneFieldWithHDF(loadPath,velFields[0],Res,order)
-        U[1] = readOneFieldWithHDF(loadPath,velFields[1],Res,order)
-        U[2] = readOneFieldWithHDF(loadPath,velFields[2],Res,order)
+        U[0] = readOneFieldWithX(loadPath,velFields[0],Res,order)
+        U[1] = readOneFieldWithX(loadPath,velFields[1],Res,order)
+        U[2] = readOneFieldWithX(loadPath,velFields[2],Res,order)
     else:
         U = None
         
     if magFields is not None:
         B = np.zeros((3,) + FinalShape,dtype=np.float64)  
-        B[0] = readOneFieldWithHDF(loadPath,magFields[0],Res,order)
-        B[1] = readOneFieldWithHDF(loadPath,magFields[1],Res,order)
-        B[2] = readOneFieldWithHDF(loadPath,magFields[2],Res,order)
+        B[0] = readOneFieldWithX(loadPath,magFields[0],Res,order)
+        B[1] = readOneFieldWithX(loadPath,magFields[1],Res,order)
+        B[2] = readOneFieldWithX(loadPath,magFields[2],Res,order)
     else:
         B = None
     
     if accFields is not None:
         Acc = np.zeros((3,) + FinalShape,dtype=np.float64)  
-        Acc[0] = readOneFieldWithHDF(loadPath,accFields[0],Res,order)
-        Acc[1] = readOneFieldWithHDF(loadPath,accFields[1],Res,order)
-        Acc[2] = readOneFieldWithHDF(loadPath,accFields[2],Res,order)
+        Acc[0] = readOneFieldWithX(loadPath,accFields[0],Res,order)
+        Acc[1] = readOneFieldWithX(loadPath,accFields[1],Res,order)
+        Acc[2] = readOneFieldWithX(loadPath,accFields[2],Res,order)
     else:
         Acc = None
         
