@@ -25,7 +25,7 @@ ID = sys.argv[1]
 Res = int(sys.argv[2])
 SimType = sys.argv[3] # Enzo or Athena
 FluidType = sys.argv[4] # hydro or mhd
-SimType = sys.argv[5] # hydro or mhd
+TurbType = sys.argv[5] # forced or decay
 
 globalMinMax = {
     'rho' : [0.16159,3.7477],
@@ -38,8 +38,15 @@ globalMinMax = {
     'B' : [6.9895e-05,2.0628],
     'AlfvenicMach' : [0.00015687,10037],
     'plasmabeta' : [0.14199,3.9747e+08],
-    'DM_x' : [6.1409,80.474],
-    'RM_x' : [-41.752,49.947],
+    'DM_x' : [0.01,100],
+    'DM_y' : [0.01,100],
+    'DM_z' : [0.01,100],
+    'lnDM_x' : [-3.,3.],
+    'lnDM_y' : [-3.,3.],
+    'lnDM_z' : [-3.,3.],
+    'RM_x' : [-2.,2.],
+    'RM_y' : [-2.,2.],
+    'RM_z' : [-2.,2.],
 }
         
 order='unset'
@@ -69,7 +76,7 @@ elif FluidType != "mhd":
 	print("Unknown FluidType - use 'mhd' or 'hydro'... FAIL")
 	sys.exit(1)
     
-if SimType == 'decay':
+if TurbType == 'decay':
     accFields = None
 
 TimeDoneStart = MPI.Wtime() - TimeStart
@@ -104,19 +111,20 @@ def getAndWriteStatisticsToFile(field,name,bounds=None):
         bounds - tuple, lower and upper bound for histogram, if None then min/max
     """
     
+    N = float(comm.allreduce(field.size))
     total = comm.allreduce(np.sum(field))
-    mean = total / float(Res**3.)
+    mean = total / N
 
     totalSqrd = comm.allreduce(np.sum(field**2.))
-    rms = np.sqrt(totalSqrd / float(Res**3.))
+    rms = np.sqrt(totalSqrd / N)
 
-    var = comm.allreduce(np.sum((field - mean)**2.)) / (float(Res**3.) - 1.)
+    var = comm.allreduce(np.sum((field - mean)**2.)) / (N - 1.)
     
     stddev = np.sqrt(var)
 
-    skew = comm.allreduce(np.sum((field - mean)**3. / stddev**3.)) / (float(Res**3.))
+    skew = comm.allreduce(np.sum((field - mean)**3. / stddev**3.)) / N
     
-    kurt = comm.allreduce(np.sum((field - mean)**4. / stddev**4.)) / (float(Res**3.)) - 3.
+    kurt = comm.allreduce(np.sum((field - mean)**4. / stddev**4.)) / N - 3.
 
     globMin = comm.allreduce(np.min(field),op=MPI.MIN)
     globMax = comm.allreduce(np.max(field),op=MPI.MAX)
@@ -193,16 +201,45 @@ getAndWriteStatisticsToFile(AlfMach,"AlfvenicMach")
 plasmaBeta = 2.*rho/B2
 getAndWriteStatisticsToFile(plasmaBeta,"plasmabeta")
 
-DM = np.sum(rho,axis=0)
-getAndWriteStatisticsToFile(DM,"DM_x")
 
-RM = np.sum(B[0]*rho,axis=0)
-getAndWriteStatisticsToFile(RM,"RM_x")
+# this is cheap... and only works for slab decomp on x-axis
+# np.sum is required for slabs with width > 1
+DM = comm.allreduce(np.sum(rho,axis=0))/float(Res)
+chunkSize = int(Res/size)
+endIdx = int((rank + 1) * chunkSize)
+if endIdx == size:
+    endIdx = None
+getAndWriteStatisticsToFile(DM[rank*chunkSize:endIdx,:],"DM_x")
+getAndWriteStatisticsToFile(np.log(DM[rank*chunkSize:endIdx,:]),"lnDM_x")
+
+DM = np.mean(rho,axis=1)
+getAndWriteStatisticsToFile(DM,"DM_y")
+getAndWriteStatisticsToFile(np.log(DM),"lnDM_y")
+
+DM = np.mean(rho,axis=2)
+getAndWriteStatisticsToFile(DM,"DM_z")
+getAndWriteStatisticsToFile(np.log(DM),"lnDM_z")
+
+# this is cheap... and only works for slab decomp on x-axis
+# np.sum is required for slabs with width > 1
+RM = comm.allreduce(np.sum(B[0]*rho,axis=0))/float(Res)
+chunkSize = int(Res/size)
+endIdx = int((rank + 1) * chunkSize)
+if endIdx == size:
+    endIdx = None
+getAndWriteStatisticsToFile(RM[rank*chunkSize:endIdx,:],"RM_x")
+
+RM = np.mean(B[1]*rho,axis=1)
+getAndWriteStatisticsToFile(RM,"RM_y")
+
+RM = np.mean(B[2]*rho,axis=2)
+getAndWriteStatisticsToFile(RM,"RM_z")
 
 
 def getCorrCoeff(X,Y):
-    meanX = comm.allreduce(np.sum(X)) / float(Res**3.)
-    meanY = comm.allreduce(np.sum(Y)) / float(Res**3.)
+    N = float(comm.allreduce(X.size))
+    meanX = comm.allreduce(np.sum(X)) / N
+    meanY = comm.allreduce(np.sum(Y)) / N
 
     stdX = np.sqrt(comm.allreduce(np.sum((X - meanX)**2.)))
     stdY = np.sqrt(comm.allreduce(np.sum((Y - meanY)**2.)))
