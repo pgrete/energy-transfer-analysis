@@ -6,7 +6,8 @@ BINTYPE="Log"
 FLUID='mhd'
 
 #RUNTYPE="JustShrink"
-RUNTYPE="FlowAndEnTrans"
+#RUNTYPE="FlowAndEnTrans"
+RUNTYPE="Stats"
 
 
 RUNS=(
@@ -17,7 +18,10 @@ RUNS=(
 #"Athena" "/nobackup/pgrete/run-stripe1/2048-2.0-0.500-1.000-0.50-6.00" 1024 
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-0.50-3.00" 512 
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.500-1.000-1.00-3.00" 512   
-#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-0.50-3.00" 512  
+"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-1.000-0.50-3.00" 512  
+"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.062-0.50-3.00.f3" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f40" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-delta-0.10-3.00" 512
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.000-1.000-0.50-3.00" 512  
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.250-1.000-1.00-3.00" 512   
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-0.750-1.000-0.50-3.00" 512   
@@ -50,8 +54,9 @@ RUNS=(
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.062-1.00-3.00" 512
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f7" 512
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f14" 512
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00" 512
-"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-delta-0.50-3.00" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f120" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.000-0.50-3.00.f75" 512
+#"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-delta-0.50-3.00" 512
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.125-0.50-3.00" 512
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.250-0.50-3.00" 512
 #"Athena" "/nobackup/pgrete/run-stripe1/512-2.0-1.000-0.500-0.50-3.00" 512
@@ -116,6 +121,18 @@ do
         echo "unknown RES: $RES"
         exit 1
       fi
+    elif [[ $RUNTYPE == "Stats" ]]; then
+      if [[ $RES == 512 ]]; then
+        NODETYPE="bro"
+        NMPI=28
+        WALLTIME="0:15:0"
+#        WALLTIME="2:30:0"
+        NUMNODES=1
+        NPROC=16
+      else
+        echo "unknown RES: $RES"
+        exit 1
+      fi
 
     fi
 
@@ -140,10 +157,10 @@ do
     continue
     fi
 
-if [ ! -f $DUMPFILE ]; then
-echo $BNAME $DUMP missing dump
-continue
-fi
+#if [ ! -f $DUMPFILE ]; then
+#echo $BNAME $DUMP missing dump
+#continue
+#fi
 
 #############################################################################
 ############### Check if justShrink is done
@@ -174,6 +191,7 @@ fi
 #############################################################################
 ############### Check if FlowAndEnTrans is done
 #############################################################################
+if [[ $RUNTYPE == "FlowAndEnTrans" ]]; then
 #if [ -f ${DUMP}-All-${BINTYPE}-${RES}.pkl ]; then
 if [ -f ${DUMP}-All-Forc-Pres-${BINTYPE}-${RES}.pkl ]; then
 #if [ -f ${DUMP}-PSMagEn-${RES}.npy ]; then
@@ -181,7 +199,7 @@ if [ -f ${DUMP}-All-Forc-Pres-${BINTYPE}-${RES}.pkl ]; then
 #echo $BNAME $DUMP done 
 continue
 fi
-
+fi
 #if [ ! -f ${PREFIX}${DUMP}/acceleration_z-${RES}.hdf5 ]; then
 #  echo missing $BNAME $DUMP 
 #  continue
@@ -207,7 +225,7 @@ cd $ROOTDATADIR
 
 " > tmp.sh
 
-#if [[ $RUNTYPE == "JustShrink" ]]; then
+if [[ $RUNTYPE == "JustShrink" ]]; then
   echo "
 mkdir ${DUMP}
 lfs setstripe -c 4 ${DUMP}
@@ -216,7 +234,8 @@ python ~/src/energy-transfer-analysis/scripts/shrink.py Athena ${DUMP} ${RES} ${
 python ~/src/energy-transfer-analysis/scripts/delVtk.py Athena ${DUMP} ${RES} ${FLUID} forced
 date
 " >> tmp.sh
-    
+fi
+
 if [[ $RUNTYPE == "FlowAndEnTrans" ]]; then
   echo "
 date
@@ -226,7 +245,16 @@ date
 mpiexec -np $NPROC python ~/src/energy-transfer-analysis/runTransfer.py $DUMP All-Forc-Pres ${RES} AthenaHDF  ${FLUID} $BINTYPE 
 date
 " >> tmp.sh
+fi
 
+if [[ $RUNTYPE == "Stats" ]]; then
+  echo "
+date
+mpiexec -np $NPROC python ~/src/energy-transfer-analysis/runHigherFlowQuant.py ${DUMP} ${RES} AthenaHDF ${FLUID} 
+
+
+date
+" >> tmp.sh
 fi
 
 qsub tmp.sh
