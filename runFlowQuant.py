@@ -70,6 +70,14 @@ if SimType == "AthenaHDF":
     accFields = None
     loadPath = ID
     order = "F"
+elif SimType == "AthenaHDFC":
+    rhoField = "density"
+    velFields = ["velocity_x","velocity_y","velocity_z"]
+    magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
+    #accFields = ['acceleration_x','acceleration_y','acceleration_z']
+    accFields = None
+    loadPath = ID
+    order = "C"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)

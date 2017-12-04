@@ -75,6 +75,13 @@ elif SimType == "AthenaHDF":
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     loadPath = ID
     order = "F"
+elif SimType == "AthenaHDFC":
+    rhoField = "density"
+    velFields = ["velocity_x","velocity_y","velocity_z"]
+    magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
+    accFields = ['acceleration_x','acceleration_y','acceleration_z']
+    loadPath = ID
+    order = "C"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)
@@ -103,7 +110,7 @@ if rank == 0:
 TimeDoneStart = MPI.Wtime() 
 if "HDF" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
-        rhoField,velFields,magFields,accFields,order)
+        rhoField,velFields,magFields,accFields,order,useMMAP=False)
 else:
     rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
         rhoField,velFields,magFields,accFields)

@@ -104,21 +104,33 @@ def readOneFieldWithHDFmmap(loadPath,FieldName,Res,order):
 def readOneFieldWithHDF(loadPath,FieldName,Res,order):
     Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
 
-    h5Data = h5py.File(Filename, 'r')[FieldName]
+    if order == 'F':
 
-    chunkSize = Res/size
-    startIdx = int(rank * chunkSize)
-    endIdx = int((rank + 1) * chunkSize)
-    if endIdx == Res:                
-        endIdx = None
+        if rank == 0:
 
-    if order == 'C':
-        data = np.float64(h5Data[0,startIdx:endIdx,:,:])     
-    elif order == 'F':                    
-        data = np.float64(h5Data[0,:,:,startIdx:endIdx].T)
+            h5Data = h5py.File(Filename, 'r')[FieldName]
+        
+            tmp = np.float64(h5Data[0,:,:,:]).T.reshape((size,int(Res/size),Res,Res))
+
+            data = comm.scatter(tmp)
+
+        else:
+            data = comm.scatter(None)
+
+    elif order == 'C':
+        chunkSize = Res/size
+        startIdx = int(rank * chunkSize)
+        endIdx = int((rank + 1) * chunkSize)
+        if endIdx == Res:                
+            endIdx = None
+        
+        h5Data = h5py.File(Filename, 'r')[FieldName]
+        data = np.float64(h5Data[0,startIdx:endIdx,:,:])
+
+    if rank == 0:
+        print("[%03d] done reading %s" % (rank,FieldName))
 
     return np.ascontiguousarray(data)
-    
 
 def readAllFieldsWithHDF(loadPath,Res,
     rhoField,velFields,magFields,accFields,order,useMMAP=False):
