@@ -110,7 +110,7 @@ class EnergyTransfer:
         if KBin not in Result[formalism][term][method].keys():
             Result[formalism][term][method][KBin] = {}
                     
-        Result[formalism][term][method][KBin][QBin] = value           
+        Result[formalism][term][method][KBin][QBin] = float(value)
                     
     def calcBasicVars(self,formalism):
         """ calculate basic variables for the different formalisms, i.e.
