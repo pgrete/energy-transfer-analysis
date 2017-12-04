@@ -102,9 +102,9 @@ def readOneFieldWithHDFmmap(loadPath,FieldName,Res,order):
     return np.ascontiguousarray(data)
 
 def readOneFieldWithHDF(loadPath,FieldName,Res,order):
-    Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
 
     if order == 'F':
+        Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
 
         if rank == 0:
 
@@ -118,6 +118,8 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
             data = comm.scatter(None)
 
     elif order == 'C':
+        Filename = loadPath + '/' + FieldName + '-' + str(Res) + '-C.hdf5'
+        
         chunkSize = Res/size
         startIdx = int(rank * chunkSize)
         endIdx = int((rank + 1) * chunkSize)
