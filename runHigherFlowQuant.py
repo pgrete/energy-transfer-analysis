@@ -8,7 +8,7 @@ comm.Barrier()
 TimeStart = MPI.Wtime()
 
 import numpy as np
-from mpiFFT4py.slab import R2C
+from mpi4py_fft.mpifft import PFFT, Function
 import time
 import pickle
 import sys
@@ -113,6 +113,110 @@ TimeDoneReading = MPI.Wtime()
 if rank == 0:
     Outfile = h5py.File(str(ID).zfill(4) + "-stats-" + str(Res) + ".hdf5", "w")
 
+kMaxInt = ceil(Res*0.5*np.sqrt(3.))
+Bins = np.linspace(0.5,kMaxInt + 0.5,kMaxInt+1)
+# if max k does not fall in last bin, remove last bin
+if Res*0.5*np.sqrt(3.) < Bins[-2]:
+    Bins = Bins[:-1]
+
+N = np.array([Res,Res,Res], dtype=int)
+# using L = 2pi as we work (e.g. when binning) with integer wavenumbers
+L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
+#FFT = PFFT(comm,N, axes=(0,1,2),collapse=False, slab=True,dtype=np.float64)
+FFT = PFFT(comm,N, axes=(0,1,2),collapse=False, slab=True,dtype=np.complex128)
+
+localK = FFT.get_local_wavenumbermesh(L)
+localKmag = np.linalg.norm(localK,axis=0)
+
+localKunit = np.copy(localK)
+# fixing division by 0 for harmonic part
+if rank == 0:
+    if localKmag[0,0,0] == 0.:
+        localKmag[0,0,0] = 1.
+    else:
+        print("[0] kmag not zero where it's supposed to be")
+        sys.exit(1)
+else:
+    if (localKmag == 0.).any():
+        print("[%d] kmag not zero where it's supposed to be" % rank)
+        sys.exit(1)
+
+localKunit /= localKmag
+if rank == 0:
+    localKmag[0,0,0] = 0.
+
+
+def normedSpec(k,quantity,Bins):
+    histSum = binned_statistic(k,quantity,bins=Bins,statistic='sum')[0]
+    kSum = binned_statistic(k,k,bins=Bins,statistic='sum')[0]
+    histCount = np.histogram(k,bins=Bins)[0]
+
+    totalHistSum = comm.reduce(histSum.astype(np.float64))
+    totalKSum = comm.reduce(kSum.astype(np.float64))
+    totalHistCount = comm.reduce(histCount.astype(np.float64))
+
+    if rank == 0:
+
+        if (totalHistCount == 0.).any():
+            print("totalHistCount is 0. Check desired binning!")
+            print(Bins)
+            print(totalHistCount)
+            sys.exit(1)
+
+        # calculate corresponding k to to bin
+        # this help to overcome statistics for low k bins
+        centeredK = totalKSum / totalHistCount
+
+        ###  "integrate" over k-shells
+        # normalized by mean shell surface
+        valsShell = 4. * np.pi * centeredK**2. * (totalHistSum / totalHistCount)
+        # normalized by mean shell volume
+        valsVol = 4. * np.pi / 3.* (Bins[1:]**3. - Bins[:-1]**3.) * (totalHistSum / totalHistCount)
+        # unnormalized
+        valsNoNorm = totalHistSum
+
+        return [centeredK,valsShell,valsVol,valsNoNorm]
+    else:
+        return None
+
+
+
+def getPowSpecs(name,vec):
+
+    FT_vec = Function(FFT,tensor=3)
+    for i in range(3):
+        FT_vec[i] = FFT.forward(vec[i], FT_vec[i])
+
+    FT_Full = np.linalg.norm(FT_vec,axis=0)**2.
+    PS_Full = normedSpec(localKmag.reshape(-1),FT_Full.reshape(-1),Bins)
+
+    # project components
+    localVecDotKunit = np.sum(FT_vec*localKunit,axis = 0)
+
+    FT_Dil = np.linalg.norm(localVecDotKunit * localKunit,axis=0)**2.
+    PS_Dil = normedSpec(localKmag.reshape(-1),FT_Dil.reshape(-1),Bins)
+    
+    FT_Sol = np.linalg.norm(FT_vec - FT_Dil,axis=0)**2.
+    PS_Sol = normedSpec(localKmag.reshape(-1),FT_Sol.reshape(-1),Bins)
+
+    totPowFull = comm.allreduce(np.sum(FT_Full))
+    totPowDil = comm.allreduce(np.sum(FT_Dil))
+    totPowSol = comm.allreduce(np.sum(FT_Sol))
+    totPowHarm = np.linalg.norm(FT_vec[:,0,0,0],axis=0)**2.
+
+    if rank == 0:
+        Outfile.require_dataset(name + '/PowSpec/Bins', (1,len(Bins)), dtype='f')[0] = Bins
+        Outfile.require_dataset(name + '/PowSpec/Full', (4,len(Bins)-1), dtype='f')[:,:] = PS_Full
+        Outfile.require_dataset(name + '/PowSpec/Dil', (4,len(Bins)-1), dtype='f')[:,:] = PS_Dil
+        Outfile.require_dataset(name + '/PowSpec/Sol', (4,len(Bins)-1), dtype='f')[:,:] = PS_Sol
+        Outfile.require_dataset(name + '/PowSpec/TotSol', (1,), dtype='f')[0] = totPowSol
+        Outfile.require_dataset(name + '/PowSpec/TotDil', (1,), dtype='f')[0] = totPowDil
+        Outfile.require_dataset(name + '/PowSpec/TotFull', (1,), dtype='f')[0] = totPowFull
+        Outfile.require_dataset(name + '/PowSpec/TotHarm', (1,), dtype='f')[0] = totPowHarm
+
+getPowSpecs('u',U)
+getPowSpecs('rhoU',np.sqrt(rho)*U)
+
 
 def getAndWriteStatisticsToFile(field,name,bounds=None):
     """
@@ -189,6 +293,7 @@ V2 = np.sum(U**2.,axis=0)
 getAndWriteStatisticsToFile(np.sqrt(V2),"u")
 if Acc is not None:
     getAndWriteStatisticsToFile(np.sqrt(np.sum(Acc**2.,axis=0)),"a")
+    getPowSpecs('a',Acc)
 getAndWriteStatisticsToFile(np.abs(MPIdivX(comm,U)),"AbsDivU")
 getAndWriteStatisticsToFile(np.sqrt(np.sum(MPIrotX(comm,U)**2.,axis=0)),"AbsRotU")
 
@@ -218,6 +323,7 @@ else:
     plasmaBeta = 2.*rho/B2
 getAndWriteStatisticsToFile(plasmaBeta,"plasmabeta")
 
+getPowSpecs('B',B)
 
 # this is cheap... and only works for slab decomp on x-axis
 # np.sum is required for slabs with width > 1
