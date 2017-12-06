@@ -61,6 +61,7 @@ def normedSpec(k,quantity):
 
         
 order='unset'
+pField = None
 
 if SimType == "AthenaHDF":
     rhoField = "density"
@@ -68,6 +69,8 @@ if SimType == "AthenaHDF":
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     #accFields = ['acceleration_x','acceleration_y','acceleration_z']
     accFields = None
+    if 'adiabatic' in FluidType:
+        pField = 'pressure'
     loadPath = ID
     order = "F"
 elif SimType == "AthenaHDFC":
@@ -76,6 +79,8 @@ elif SimType == "AthenaHDFC":
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     #accFields = ['acceleration_x','acceleration_y','acceleration_z']
     accFields = None
+    if 'adiabatic' in FluidType:
+        pField = 'pressure'
     loadPath = ID
     order = "C"
 else:
@@ -84,10 +89,14 @@ else:
 
 if FluidType == "hydro":
 	magFields = None
-elif FluidType != "mhd":
+elif 'mhd' not in FluidType:
 	print("Unknown FluidType - use 'mhd' or 'hydro'... FAIL")
 	sys.exit(1)
     
+if 'adiabatic' in FluidType:
+    if rank == 0:
+        print("WARNING: Gamma = 5/3 hardcoded for adiabatic EOS")
+    Gamma = 5./3.
 
 TimeDoneStart = MPI.Wtime() - TimeStart
 TimeDoneStart = comm.gather(TimeDoneStart)
@@ -98,7 +107,7 @@ if rank == 0:
 
 TimeDoneStart = MPI.Wtime() 
 rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
-    rhoField,velFields,magFields,accFields,order)
+    rhoField,velFields,magFields,accFields,pField,order)
 
 TimeDoneReading = MPI.Wtime() - TimeDoneStart
 TimeDoneReading = comm.gather(TimeDoneReading)
@@ -161,7 +170,11 @@ KinEn = 0.5 * np.sum(W**2.,axis=0)
 totalKinEn = comm.reduce(np.sum(KinEn))
 del KinEn
 
+
 V2 = np.sum(U**2.,axis=0)
+if 'adiabatic' in FluidType:
+    V2 /= Gamma * P / rho
+
 totalV2 = comm.reduce(np.sum(V2))
 V = np.sqrt(V2)
 totalV = comm.reduce(np.sum(V))
@@ -169,12 +182,11 @@ totalV = comm.reduce(np.sum(V))
 if rank == 0:
     Quantities["Mean"]["KineticEnergy"] = totalKinEn / float(Res**3.)
     
-    # assuming isothermal EOS with c_s = 1
     Quantities["RMS"]["SonicMach"] = np.sqrt(totalV2 / float(Res**3.))
     Quantities["Mean"]["SonicMach"] = totalV / float(Res**3.)
 
 
-if FluidType != "mhd":
+if "mhd" not in FluidType:
     if rank == 0:
         Quantities.write()
     sys.exit(0)
@@ -201,7 +213,10 @@ totalAlfMach2 = comm.reduce(np.sum(AlfMach2))
 AlfMach = np.sqrt(AlfMach2)
 totalAlfMach = comm.reduce(np.sum(AlfMach))
 
-plasmaBeta = 2.*rho/B2
+if 'adiabatic' in FluidType:
+    plasmaBeta = 2.* P / B2
+else:
+    plasmaBeta = 2.*rho/B2
 totalPlasmaBeta = comm.reduce(np.sum(plasmaBeta))
 
 

@@ -27,6 +27,11 @@ SimType = sys.argv[3] # Enzo or Athena
 FluidType = sys.argv[4] # hydro or mhd
 TurbType = sys.argv[5] # forced or decay
 
+if 'adiabatic' in FluidType:
+    if rank == 0:
+        print("WARNING: Gamma = 5/3 hardcoded for adiabatic EOS")
+    Gamma = 5./3.
+
 globalMinMax = {
     'rho' : [0.16159,3.7477],
     'lnrho' : [-1.8227,1.3211],
@@ -50,6 +55,7 @@ globalMinMax = {
 }
         
 order='unset'
+pField = None
 
 if SimType == "AthenaHDF":
     rhoField = "density"
@@ -57,6 +63,8 @@ if SimType == "AthenaHDF":
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     #accFields = None
+    if 'adiabatic' in FluidType:
+        pField = 'pressure'
     loadPath = ID
     order = "F"
 elif SimType == "AthenaHDFC":
@@ -64,6 +72,8 @@ elif SimType == "AthenaHDFC":
     velFields = ["velocity_x","velocity_y","velocity_z"]
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
+    if 'adiabatic' in FluidType:
+        pField = 'pressure'
     loadPath = ID
     order = "C"
 else:
@@ -72,7 +82,7 @@ else:
 
 if FluidType == "hydro":
 	magFields = None
-elif FluidType != "mhd":
+elif 'mhd' not in FluidType:
 	print("Unknown FluidType - use 'mhd' or 'hydro'... FAIL")
 	sys.exit(1)
     
@@ -88,7 +98,7 @@ if rank == 0:
 
 TimeDoneStart = MPI.Wtime() 
 rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
-    rhoField,velFields,magFields,accFields,order)
+    rhoField,velFields,magFields,accFields,pField,order)
 
 TimeDoneReading = MPI.Wtime() - TimeDoneStart
 TimeDoneReading = comm.gather(TimeDoneReading)
@@ -182,8 +192,12 @@ if Acc is not None:
 getAndWriteStatisticsToFile(np.abs(MPIdivX(comm,U)),"AbsDivU")
 getAndWriteStatisticsToFile(np.sqrt(np.sum(MPIrotX(comm,U)**2.,axis=0)),"AbsRotU")
 
+if 'adiabatic' in FluidType:
+    Ms2 = V2 / (Gamma * P / rho)
+    getAndWriteStatisticsToFile(np.sqrt(Ms2),"Ms")
 
-if FluidType != "mhd":
+
+if "mhd" not in FluidType:
     if rank == 0:
         Outfile.close()
     sys.exit(0)
@@ -198,7 +212,10 @@ AlfMach = np.sqrt(AlfMach2)
 
 getAndWriteStatisticsToFile(AlfMach,"AlfvenicMach")
 
-plasmaBeta = 2.*rho/B2
+if 'adiabatic' in FluidType:
+    plasmaBeta = 2.* P / B2
+else:
+    plasmaBeta = 2.*rho/B2
 getAndWriteStatisticsToFile(plasmaBeta,"plasmabeta")
 
 

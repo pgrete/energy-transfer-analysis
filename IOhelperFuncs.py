@@ -135,7 +135,7 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
     return np.ascontiguousarray(data)
 
 def readAllFieldsWithHDF(loadPath,Res,
-    rhoField,velFields,magFields,accFields,order,useMMAP=False):
+    rhoField,velFields,magFields,accFields,pField,order,useMMAP=False):
     """
     Reads all fields using the HDF5. Data is read in parallel.
 
@@ -184,10 +184,15 @@ def readAllFieldsWithHDF(loadPath,Res,
         Acc[2] = readOneFieldWithX(loadPath,accFields[2],Res,order)
     else:
         Acc = None
+    
+    if pField is not None:
+        P = readOneFieldWithX(loadPath,pField,Res,order)
+    else:
+        # CAREFUL assuming isothermal EOS here with c_s = 1 -> P = rho in code units
+        if rank == 0:
+            print("WARNING: remember assuming isothermal EOS with c_s = 1, i.e. P = rho")
+        P = rho
         
-    # CAREFUL assuming isothermal EOS here with c_s = 1 -> P = rho in code units
-    if rank == 0:
-        print("WARNING: rememer assuming isothermal EOS with c_s = 1, i.e. P = rho hardcoded")
-    return rho, U, B, Acc, rho
+    return rho, U, B, Acc, P
 
 
