@@ -5,6 +5,7 @@ import h5py as h5
 import sys
 import os
 import gc
+import glob
 
 
 Type = sys.argv[1]
@@ -24,10 +25,10 @@ if Type[:6] == "Athena":
     ]
     if Forced == 'forced':
         Fields += ["acceleration_x","acceleration_y","acceleration_z"]
-    if Fluid == 'mhd':
+    if 'mhd' in Fluid:
         Fields += ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
-
-
+    if 'adiabatic' in Fluid:
+        Fields += ['pressure']
 
 elif Type[:4] == "Enzo":
     ds = yt.load("DD" + Id + "/data" + Id)
@@ -143,5 +144,29 @@ for field in Fields:
     del origField, dataSet, destField, hdf5File
     print("%s done after (%.2f sec)" % (field, time.time() - start))
 
+
+skip = True
+for field in Fields:
+
+    if not (os.path.exists("%s/%s-%i%s.hdf5"%(DirId,field,RES,Suffix))):
+        skip = False
+        print("%s/%s-%i.hdf5 misses "%(DirId,field,RES))
+    elif not (int(os.path.getsize("%s/%s-%i%s.hdf5"%(DirId,field,RES,Suffix))) == Sizes[RES][0]):
+        skip = False
+        print("%s/%s-%i%s.hdf5 wrong size act %d versus %d "%(DirId,field,RES,Suffix,int(os.path.getsize("%s/%s-%i%s.hdf5"%(DirId,field,RES,Suffix))),Sizes[RES][0]))
+    
+    if not(os.path.exists("%s/%s-%i%s.hdf5"%(DirId,field,int(RES/2),Suffix))):
+        skip = False
+        print("%s/%s-%i%s.hdf5 misses "%(DirId,field,int(RES/2),Suffix))
+    elif not(int(os.path.getsize("%s/%s-%i%s.hdf5"%(DirId,field,int(RES/2),Suffix))) == Sizes[RES][1]):
+        skip = False
+        print("%s/%s-%i%s.hdf5 wrong size act %d versus %d "%(DirId,field,int(RES/2),Suffix,os.path.getsize("%s/%s-%i%s.hdf5"%(DirId,field,int(RES/2),Suffix)),Sizes[RES][1]))
+
+    sys.stdout.flush()
+    
+if skip: 
+    for File in glob.glob("id*/Turb*%s.vtk" % Id):
+        os.remove(File)
+    print("Done with %s. deleting vtk ..." % DirId)
 
 print("total execution time (%.2f sec)" % (time.time() - start))
