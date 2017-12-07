@@ -187,21 +187,28 @@ def getPowSpecs(name,vec):
     for i in range(3):
         FT_vec[i] = FFT.forward(vec[i], FT_vec[i])
 
-    FT_Full = np.linalg.norm(FT_vec,axis=0)**2.
-    PS_Full = normedSpec(localKmag.reshape(-1),FT_Full.reshape(-1),Bins)
+    FT_vecAbs2 = np.linalg.norm(FT_vec,axis=0)**2.
+    PS_Full = normedSpec(localKmag.reshape(-1),FT_vecAbs2.reshape(-1),Bins)
 
     # project components
     localVecDotKunit = np.sum(FT_vec*localKunit,axis = 0)
 
-    FT_Dil = np.linalg.norm(localVecDotKunit * localKunit,axis=0)**2.
-    PS_Dil = normedSpec(localKmag.reshape(-1),FT_Dil.reshape(-1),Bins)
+    FT_Dil = localVecDotKunit * localKunit
+    FT_DilAbs2 = np.linalg.norm(FT_Dil,axis=0)**2.
+    PS_Dil = normedSpec(localKmag.reshape(-1),FT_DilAbs2.reshape(-1),Bins)
     
-    FT_Sol = np.linalg.norm(FT_vec - FT_Dil,axis=0)**2.
-    PS_Sol = normedSpec(localKmag.reshape(-1),FT_Sol.reshape(-1),Bins)
+    FT_Sol = FT_vec - FT_Dil
+    if rank == 0:
+        # remove harmonic part from solenoidal component
+        FT_Sol[:,0,0,0] = 0.
+    FT_SolAbs2 = np.linalg.norm(FT_Sol,axis=0)**2.
+    PS_Sol = normedSpec(localKmag.reshape(-1),FT_SolAbs2.reshape(-1),Bins)
 
-    totPowFull = comm.allreduce(np.sum(FT_Full))
-    totPowDil = comm.allreduce(np.sum(FT_Dil))
-    totPowSol = comm.allreduce(np.sum(FT_Sol))
+
+
+    totPowFull = comm.allreduce(np.sum(FT_vecAbs2))
+    totPowDil = comm.allreduce(np.sum(FT_DilAbs2))
+    totPowSol = comm.allreduce(np.sum(FT_SolAbs2))
     totPowHarm = np.linalg.norm(FT_vec[:,0,0,0],axis=0)**2.
 
     if rank == 0:
