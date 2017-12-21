@@ -44,9 +44,9 @@ for field in Fields:
 
     origField = h5Data[0,:,:,:].T.reshape((1,RES,RES,RES))
 
-    np.save('%s/%s-xy.npy' % (DirId,field),origField[0,:,:,49])
-    np.save('%s/%s-yz.npy' % (DirId,field),origField[0,835,:,:])
-    np.save('%s/%s-xz.npy' % (DirId,field),origField[0,:,1532,:])
+    np.save('%s/%s-xy.npy' % (DirId,field),origField[0,:,:,49 % RES])
+    np.save('%s/%s-yz.npy' % (DirId,field),origField[0,835 % RES,:,:])
+    np.save('%s/%s-xz.npy' % (DirId,field),origField[0,:,1532 % RES,:])
     
     hdf5File = h5.File("%s/%s-%i-C.hdf5"%(DirId,field,RES), 'w')
     dataSet = hdf5File.create_dataset(field, data=origField)
@@ -61,7 +61,7 @@ for field in Fields:
     
     print("%s done after (%.2f sec)" % (field, time.time() - start))
 
-for field in Fields:
+#for field in Fields:
 
     if int(os.path.getsize("%s/%s-%i-C.hdf5"%(DirId,field,RES))) == Sizes[RES][0]:
         print("Filesize of %s is good" % field)
