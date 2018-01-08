@@ -43,15 +43,18 @@ globalMinMax = {
     'B' : [6.9895e-05,2.0628],
     'AlfvenicMach' : [0.00015687,10037],
     'plasmabeta' : [0.14199,3.9747e+08],
-    'DM_x' : [0.01,100],
-    'DM_y' : [0.01,100],
-    'DM_z' : [0.01,100],
-    'lnDM_x' : [-3.,3.],
-    'lnDM_y' : [-3.,3.],
-    'lnDM_z' : [-3.,3.],
-    'RM_x' : [-2.,2.],
-    'RM_y' : [-2.,2.],
-    'RM_z' : [-2.,2.],
+    'DM_x' : [0.60,1.4],
+    'DM_y' : [0.60,1.4],
+    'DM_z' : [0.60,1.4],
+    'lnDM_x' : [-0.45,0.35],
+    'lnDM_y' : [-0.45,0.35],
+    'lnDM_z' : [-0.45,0.35],
+    'RM_x' : [-0.6,0.75],
+    'RM_y' : [-0.6,0.75],
+    'RM_z' : [-0.6,0.75],
+    'Angle_u_a' : [-1.,1.],
+    'Angle_uSol_a' : [-1.,1.],
+    'Angle_uDil_a' : [-1.,1.],
 }
         
 order='unset'
@@ -180,8 +183,51 @@ def normedSpec(k,quantity,Bins):
         return None
 
 
+def getComponents(vec):
+    """ decomposed input vector into harmonic, rotational and compressive part
+    """
+    
+    N = float(comm.allreduce(vec.size))
+    total = comm.allreduce(np.sum(vec,axis=(1,2,3)))
+    Harm = total / N
+    
+    FT_vec = Function(FFT,tensor=3)
+    for i in range(3):
+        FT_vec[i] = FFT.forward(vec[i], FT_vec[i])
+    
+    # project components
+    localVecDotKunit = np.sum(FT_vec*localKunit,axis = 0)
 
-def getPowSpecs(name,vec):
+    FT_Dil = localVecDotKunit * localKunit
+    
+    FT_Sol = FT_vec - FT_Dil
+    if rank == 0:
+        # remove harmonic part from solenoidal component
+        FT_Sol[:,0,0,0] = 0.
+
+    Dil = Function(FFT,False,tensor=3)
+    Sol = Function(FFT,False,tensor=3)
+
+    for i in range(3):
+        Dil[i] = FFT.backward(FT_Dil[i],Dil[i])
+        Sol[i] = FFT.backward(FT_Sol[i],Sol[i])
+
+    return Harm, Sol.real, Dil.real
+
+
+def getScaPowSpec(name,field):
+
+    FT_field = Function(FFT)
+    FT_field = FFT.forward(field, FT_field)
+
+    FT_fieldAbs2 = np.abs(FT_field)**2.
+    PS_Full = normedSpec(localKmag.reshape(-1),FT_fieldAbs2.reshape(-1),Bins)
+
+    if rank == 0:
+        Outfile.require_dataset(name + '/PowSpec/Bins', (1,len(Bins)), dtype='f')[0] = Bins
+        Outfile.require_dataset(name + '/PowSpec/Full', (4,len(Bins)-1), dtype='f')[:,:] = PS_Full
+
+def getVecPowSpecs(name,vec):
 
     FT_vec = Function(FFT,tensor=3)
     for i in range(3):
@@ -221,8 +267,8 @@ def getPowSpecs(name,vec):
         Outfile.require_dataset(name + '/PowSpec/TotFull', (1,), dtype='f')[0] = totPowFull
         Outfile.require_dataset(name + '/PowSpec/TotHarm', (1,), dtype='f')[0] = totPowHarm
 
-getPowSpecs('u',U)
-getPowSpecs('rhoU',np.sqrt(rho)*U)
+getVecPowSpecs('u',U)
+getVecPowSpecs('rhoU',np.sqrt(rho)*U)
 
 
 def getAndWriteStatisticsToFile(field,name,bounds=None):
@@ -296,11 +342,30 @@ def getAndWriteStatisticsToFile(field,name,bounds=None):
 
 getAndWriteStatisticsToFile(rho,"rho")
 getAndWriteStatisticsToFile(np.log(rho),"lnrho")
+getScaPowSpec('rho',rho)
+getScaPowSpec('lnrho',np.log(rho))
+
 V2 = np.sum(U**2.,axis=0)
 getAndWriteStatisticsToFile(np.sqrt(V2),"u")
+
+getAndWriteStatisticsToFile(0.5 * rho * V2,"KinEnDensity")
+getAndWriteStatisticsToFile(0.5 * V2,"KinEnSpecific")
+
 if Acc is not None:
     getAndWriteStatisticsToFile(np.sqrt(np.sum(Acc**2.,axis=0)),"a")
-    getPowSpecs('a',Acc)
+    getVecPowSpecs('a',Acc)
+    
+    UHarm, USol, UDil = getComponents(U)
+    getAndWriteStatisticsToFile(
+        np.sum(Acc*U,axis=0)/(
+            np.linalg.norm(Acc,axis=0)*np.linalg.norm(U,axis=0)),"Angle_u_a")
+    getAndWriteStatisticsToFile(
+        np.sum(Acc*USol,axis=0)/(
+            np.linalg.norm(Acc,axis=0)*np.linalg.norm(USol,axis=0)),"Angle_uSol_a")
+    getAndWriteStatisticsToFile(
+        np.sum(Acc*UDil,axis=0)/(
+            np.linalg.norm(Acc,axis=0)*np.linalg.norm(UDil,axis=0)),"Angle_uDil_a")
+
 getAndWriteStatisticsToFile(np.abs(MPIdivX(comm,U)),"AbsDivU")
 getAndWriteStatisticsToFile(np.sqrt(np.sum(MPIrotX(comm,U)**2.,axis=0)),"AbsRotU")
 
@@ -318,6 +383,13 @@ if "mhd" not in FluidType:
 B2 = np.sum(B**2.,axis=0)
 
 getAndWriteStatisticsToFile(np.sqrt(B2),"B")
+getAndWriteStatisticsToFile(0.5 * B2,"MagEnDensity")
+
+if 'adiabatic' in FluidType:
+    TotPres = P + B2/2.
+else:
+    TotPres = rho + B2/2.
+getAndWriteStatisticsToFile(TotPres,"TotPres")
 
 AlfMach2 = V2*rho/B2
 AlfMach = np.sqrt(AlfMach2)
@@ -330,40 +402,34 @@ else:
     plasmaBeta = 2.*rho/B2
 getAndWriteStatisticsToFile(plasmaBeta,"plasmabeta")
 
-getPowSpecs('B',B)
+getVecPowSpecs('B',B)
 
 # this is cheap... and only works for slab decomp on x-axis
 # np.sum is required for slabs with width > 1
 DM = comm.allreduce(np.sum(rho,axis=0))/float(Res)
+RM = comm.allreduce(np.sum(B[0]*rho,axis=0))/float(Res)
 chunkSize = int(Res/size)
 endIdx = int((rank + 1) * chunkSize)
 if endIdx == size:
     endIdx = None
 getAndWriteStatisticsToFile(DM[rank*chunkSize:endIdx,:],"DM_x")
 getAndWriteStatisticsToFile(np.log(DM[rank*chunkSize:endIdx,:]),"lnDM_x")
+getAndWriteStatisticsToFile(RM[rank*chunkSize:endIdx,:],"RM_x")
+getAndWriteStatisticsToFile(RM[rank*chunkSize:endIdx,:]/DM[rank*chunkSize:endIdx,:],"LOSB_x")
 
 DM = np.mean(rho,axis=1)
+RM = np.mean(B[1]*rho,axis=1)
 getAndWriteStatisticsToFile(DM,"DM_y")
 getAndWriteStatisticsToFile(np.log(DM),"lnDM_y")
+getAndWriteStatisticsToFile(RM,"RM_y")
+getAndWriteStatisticsToFile(RM/DM,"LOSB_y")
 
 DM = np.mean(rho,axis=2)
+RM = np.mean(B[2]*rho,axis=2)
 getAndWriteStatisticsToFile(DM,"DM_z")
 getAndWriteStatisticsToFile(np.log(DM),"lnDM_z")
-
-# this is cheap... and only works for slab decomp on x-axis
-# np.sum is required for slabs with width > 1
-RM = comm.allreduce(np.sum(B[0]*rho,axis=0))/float(Res)
-chunkSize = int(Res/size)
-endIdx = int((rank + 1) * chunkSize)
-if endIdx == size:
-    endIdx = None
-getAndWriteStatisticsToFile(RM[rank*chunkSize:endIdx,:],"RM_x")
-
-RM = np.mean(B[1]*rho,axis=1)
-getAndWriteStatisticsToFile(RM,"RM_y")
-
-RM = np.mean(B[2]*rho,axis=2)
 getAndWriteStatisticsToFile(RM,"RM_z")
+getAndWriteStatisticsToFile(RM/DM,"LOSB_z")
 
 
 def getCorrCoeff(X,Y):
