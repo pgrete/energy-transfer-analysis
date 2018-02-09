@@ -14,7 +14,7 @@ import pickle
 import sys
 import h5py
 import os
-from scipy.stats import binned_statistic, pearsonr
+from scipy.stats import binned_statistic
 from math import ceil
 from configobj import ConfigObj
 from IOhelperFuncs import readAllFieldsWithYT, readAllFieldsWithHDF 
@@ -43,6 +43,7 @@ globalMinMax = {
     'B' : [6.9895e-05,2.0628],
     'AlfvenicMach' : [0.00015687,10037],
     'plasmabeta' : [0.14199,3.9747e+08],
+    'log10plasmabeta' : [-2,8],
     'DM_x' : [0.60,1.4],
     'DM_y' : [0.60,1.4],
     'DM_z' : [0.60,1.4],
@@ -52,9 +53,13 @@ globalMinMax = {
     'RM_x' : [-0.6,0.75],
     'RM_y' : [-0.6,0.75],
     'RM_z' : [-0.6,0.75],
+    'LOSB_x' : [-1.0,1.00],
+    'LOSB_y' : [-1.0,1.00],
+    'LOSB_z' : [-1.0,1.00],
     'Angle_u_a' : [-1.,1.],
     'Angle_uSol_a' : [-1.,1.],
     'Angle_uDil_a' : [-1.,1.],
+    'TotPres' : [0.4,4.0],
 }
         
 order='unset'
@@ -339,6 +344,17 @@ def getAndWriteStatisticsToFile(field,name,bounds=None):
             tmp[1,:-1] = totalHist.astype(float)
 
 
+def getCorrCoeff(X,Y):
+    N = float(comm.allreduce(X.size))
+    meanX = comm.allreduce(np.sum(X)) / N
+    meanY = comm.allreduce(np.sum(Y)) / N
+
+    stdX = np.sqrt(comm.allreduce(np.sum((X - meanX)**2.)))
+    stdY = np.sqrt(comm.allreduce(np.sum((Y - meanY)**2.)))
+
+    cov = comm.allreduce(np.sum( (X - meanX)*(Y - meanY)))
+
+    return cov / (stdX*stdY)
 
 getAndWriteStatisticsToFile(rho,"rho")
 getAndWriteStatisticsToFile(np.log(rho),"lnrho")
@@ -352,8 +368,13 @@ getAndWriteStatisticsToFile(0.5 * rho * V2,"KinEnDensity")
 getAndWriteStatisticsToFile(0.5 * V2,"KinEnSpecific")
 
 if Acc is not None:
-    getAndWriteStatisticsToFile(np.sqrt(np.sum(Acc**2.,axis=0)),"a")
+    Amag = np.sqrt(np.sum(Acc**2.,axis=0))
+    getAndWriteStatisticsToFile(Amag,"a")
     getVecPowSpecs('a',Acc)
+
+    corrUA = getCorrCoeff(np.sqrt(V2),Amag)
+    if rank == 0:
+        Outfile.require_dataset('U-A/corr', (1,), dtype='f')[0] = corrUA
     
     UHarm, USol, UDil = getComponents(U)
     getAndWriteStatisticsToFile(
@@ -387,9 +408,15 @@ getAndWriteStatisticsToFile(0.5 * B2,"MagEnDensity")
 
 if 'adiabatic' in FluidType:
     TotPres = P + B2/2.
+    corrPBcomp = getCorrCoeff(P,np.sqrt(B2)/rho**(2./3.))
 else:
     TotPres = rho + B2/2.
+    corrPBcomp = getCorrCoeff(rho,np.sqrt(B2)/rho**(2./3.))
+
 getAndWriteStatisticsToFile(TotPres,"TotPres")
+
+if rank == 0:
+    Outfile.require_dataset('P-Bcomp/corr', (1,), dtype='f')[0] = corrPBcomp
 
 AlfMach2 = V2*rho/B2
 AlfMach = np.sqrt(AlfMach2)
@@ -401,6 +428,7 @@ if 'adiabatic' in FluidType:
 else:
     plasmaBeta = 2.*rho/B2
 getAndWriteStatisticsToFile(plasmaBeta,"plasmabeta")
+getAndWriteStatisticsToFile(np.log10(plasmaBeta),"log10plasmabeta")
 
 getVecPowSpecs('B',B)
 
@@ -432,20 +460,8 @@ getAndWriteStatisticsToFile(RM,"RM_z")
 getAndWriteStatisticsToFile(RM/DM,"LOSB_z")
 
 
-def getCorrCoeff(X,Y):
-    N = float(comm.allreduce(X.size))
-    meanX = comm.allreduce(np.sum(X)) / N
-    meanY = comm.allreduce(np.sum(Y)) / N
-
-    stdX = np.sqrt(comm.allreduce(np.sum((X - meanX)**2.)))
-    stdY = np.sqrt(comm.allreduce(np.sum((Y - meanY)**2.)))
-
-    cov = comm.allreduce(np.sum( (X - meanX)*(Y - meanY)))
-
-    return cov / (stdX*stdY)
     
 corrRhoB = getCorrCoeff(rho,np.sqrt(B2))
-
 if rank == 0:
     Outfile.require_dataset('rho-B/corr', (1,), dtype='f')[0] = corrRhoB
 
