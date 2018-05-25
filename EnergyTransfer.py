@@ -24,7 +24,7 @@ class EnergyTransfer:
         self.W = None
         self.FT_W = None
         self.S = None
-	self.FT_S = None
+        self.FT_S = None
         self.FT_B = None
         self.FT_Acc = None
         self.FT_P = None
@@ -179,10 +179,10 @@ class EnergyTransfer:
         rho = self.rho
         U = self.U
         B = self.B
-	S = self.S
+        S = self.S
         W = self.W
         FT_W = self.FT_W
-	FT_S = self.FT_S
+        FT_S = self.FT_S
         FT_B = self.FT_B
         FT_P = self.FT_P
         FT_Acc = self.FT_Acc
@@ -193,7 +193,7 @@ class EnergyTransfer:
         W_Q = None
         S_Q = None
         B_Q = None
-	OneOverTwoSqrtRhogradBB_Q = None
+        OneOverTwoSqrtRhogradBB_Q = None
         UdotGradW_Q = None
         UdotGradS_Q = None
         UdotGradB_Q = None
