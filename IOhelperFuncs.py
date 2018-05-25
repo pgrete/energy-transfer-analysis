@@ -27,8 +27,8 @@ def readAllFieldsWithYT(loadPath,Res,
 
     startPos = rank * 1./np.float(size)
     if rank == 0:
-        print "Loading "+ loadPath
-        print "Chunk dimensions = ", FinalShape
+        print("Loading "+ loadPath)
+        print("Chunk dimensions = ", FinalShape)
         print("WARNING: remember assuming domain of L = 1")
     
 
