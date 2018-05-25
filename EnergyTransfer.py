@@ -140,6 +140,10 @@ class EnergyTransfer:
             self.FT_P = Function(self.FFT)
             self.FT_P = self.FFT.forward(self.P, self.FT_P)    
         
+        if self.FT_S is None and self.S is not None:
+            self.FT_S = Function(self.FFT)
+            self.FT_S = self.FFT.forward(self.S, self.FT_S)    
+        
         if self.FT_Acc is None and self.Acc is not None:
             self.FT_Acc = Function(self.FFT,tensor=3)
             for i in range(3):

@@ -97,6 +97,9 @@ TimeDoneStart = MPI.Wtime()
 if "HDF" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
         rhoField,velFields,magFields,accFields,order)
+elif "Nyx" in SimType:
+    rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
+        rhoField,velFields,magFields,accFields,pressField)
 else:
     rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
         rhoField,velFields,magFields,accFields)
