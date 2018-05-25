@@ -147,7 +147,7 @@ else:
 KBins = Bins
 QBins = Bins
 
-if "PU" and "SS" not in thisTerms:
+if "PU" not in thisTerms and "SS" not in thisTerms:
     P = None
 
 ET = EnergyTransfer(MPI,Res,rho,U,B,Acc,P,gamma)
