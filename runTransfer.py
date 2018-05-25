@@ -24,7 +24,10 @@ BinType = sys.argv[6] # lin or log
 
 
 
+gamma = 1.0 # isothermal
+
 rhoField = None
+pressField = None
 velFields = None
 magFields = None
 accFields = None
@@ -37,6 +40,8 @@ if "All" in SplitTerms:
 	    thisTerms += ["UU", "BUT" ,"BUP" ,"UBT" ,"UBPb" ,"BB", "BUPbb", "UBPbb"]
     if FluidType == "hydro":
     	thisTerms += ["UU"]
+if "Int" in SplitTerms:
+    thisTerms += ["SS"]
 if "Pres" in SplitTerms:
     thisTerms += ["PU"]
 if "Forc" in SplitTerms:
@@ -50,13 +55,16 @@ if len(thisTerms) == 0:
 order = "unset"
 
 if SimType == "Enzo":
+    gamma = 1.001 # quasi isothermal
     rhoField = "Density"
+    pressField = None
     velFields = ["x-velocity","y-velocity","z-velocity"]
     magFields = ["Bx","By","Bz"]
     accFields = ['x-acceleration','y-acceleration','z-acceleration']
     loadPath = "DD" + ID + "/data" + ID
 elif SimType == "Athena":
     rhoField = "density"
+    pressField = None
     velFields = ["velocity_x","velocity_y","velocity_z"]
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
@@ -68,8 +76,19 @@ elif SimType == "AthenaHDF":
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     loadPath = ID
     order = "F"
+elif SimType == "Nyx":
+    sys.path.append("/home/h/hzfbhsws/Notebooks")
+    import parameters as nyx
+    import fields
+    gamma = nyx.gamma
+    rhoField = "density"
+    pressField = "pressure"
+    velFields = [ "xvel","yvel","zvel" ]
+    magFields = None
+    accFields = [ "xaccel", "yaccel", "zaccel" ]
+    loadPath = "plt" + ID
 else:
-    print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
+    print("Unknown SimType - use 'Enzo' or 'Athena' or 'Nyx'... FAIL")
     sys.exit(1)
 
 if FluidType == "hydro":
@@ -128,10 +147,10 @@ else:
 KBins = Bins
 QBins = Bins
 
-if "PU" not in thisTerms:
+if "PU" and "SS" not in thisTerms:
     P = None
 
-ET = EnergyTransfer(MPI,Res,rho,U,B,Acc,P)
+ET = EnergyTransfer(MPI,Res,rho,U,B,Acc,P,gamma)
 
 
 """ Result dictionary of shape
@@ -161,7 +180,6 @@ if rank == 0:
         Result = {}
 else:
     Result = None
-
 
 ET.getTransferWWAnyToAny(Result,KBins,QBins, Terms = thisTerms)
 if comm.Get_rank() == 0:
