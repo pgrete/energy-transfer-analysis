@@ -9,7 +9,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def readAllFieldsWithYT(loadPath,Res,
-    rhoField,velFields,magFields,accFields):
+    rhoField,velFields,magFields,accFields,pressField=None):
     """
     Reads all fields using the yt frontend. Data is read in parallel.
 
@@ -27,6 +27,8 @@ def readAllFieldsWithYT(loadPath,Res,
 
     startPos = rank * 1./np.float(size)
     if rank == 0:
+        print("Loading "+ loadPath)
+        print("Chunk dimensions = ", FinalShape)
         print("WARNING: remember assuming domain of L = 1")
     
 
@@ -36,6 +38,13 @@ def readAllFieldsWithYT(loadPath,Res,
         rho = ad[rhoField].d
     else:
         rho = np.ones(FinalShape,dtype=np.float64) 
+    
+    if pressField is not None:
+        P = ad[pressField].d
+    else:
+        if rank == 0:
+            print("WARNING: assuming isothermal EOS with c_s = 1, i.e. P = rho")
+        P = rho
     
     if velFields is not None:
         U = np.zeros((3,) + FinalShape,dtype=np.float64)
@@ -61,10 +70,7 @@ def readAllFieldsWithYT(loadPath,Res,
     else:
         Acc = None
         
-    # CAREFUL assuming isothermal EOS here with c_s = 1 -> P = rho in code units
-    if rank == 0:
-        print("WARNING: rememer assuming isothermal EOS with c_s = 1, i.e. P = rho hardcoded")
-    return rho, U, B, Acc, rho
+    return rho, U, B, Acc, P
 
 def readOneFieldWithHDF(loadPath,FieldName,Res,order):
     Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
@@ -135,5 +141,4 @@ def readAllFieldsWithHDF(loadPath,Res,
     if rank == 0:
         print("WARNING: rememer assuming isothermal EOS with c_s = 1, i.e. P = rho hardcoded")
     return rho, U, B, Acc, rho
-
 

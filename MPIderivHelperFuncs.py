@@ -49,6 +49,12 @@ def MPIderiv2(comm,var,dim):
             
     return np.array((p1 - m1)/ds)
 
+def MPIXdotGradYScalar(comm,X,Y):
+    """ returns  (X . grad) Y
+    """
+    
+    return X[0] * MPIderiv2(comm,Y,0) + X[1] * MPIderiv2(comm,Y,1) + X[2] * MPIderiv2(comm,Y,2)
+
 def MPIXdotGradY(comm,X,Y):
     """ returns  (X . grad) Y
     """

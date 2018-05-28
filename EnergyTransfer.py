@@ -1,6 +1,6 @@
 import numpy as np
 from mpi4py_fft.mpifft import PFFT, Function
-from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX
+from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX
 import time
 import pickle
 import sys
@@ -8,8 +8,9 @@ import sys
 class EnergyTransfer:
 
     
-    def __init__(self, MPI, RES, rho, U, B,Acc,P):
+    def __init__(self, MPI, RES, rho, U, B, Acc, P, gamma):
         
+        self.gamma = gamma
         self.MPI = MPI
         self.comm = MPI.COMM_WORLD
         self.RES = RES
@@ -22,6 +23,8 @@ class EnergyTransfer:
         # Variables that we might (or might not) use later depending on the different definitons of terms
         self.W = None
         self.FT_W = None
+        self.S = None
+        self.FT_S = None
         self.FT_B = None
         self.FT_Acc = None
         self.FT_P = None
@@ -118,6 +121,7 @@ class EnergyTransfer:
         """
         
         rho = self.rho
+        P = self.P
         U = self.U
         B = self.B
 
@@ -125,6 +129,9 @@ class EnergyTransfer:
             self.W = Function(self.FFT,False,tensor=3)                                
             for i in range(3):
                 self.W[i] = np.sqrt(rho) * U[i]
+
+        if self.S is None and P is not None:
+            self.S = np.sqrt(self.gamma*P)
 
         if self.FT_W is None:
             self.FT_W = Function(self.FFT,tensor=3)
@@ -139,6 +146,10 @@ class EnergyTransfer:
         if self.FT_P is None and self.P is not None:
             self.FT_P = Function(self.FFT)
             self.FT_P = self.FFT.forward(self.P, self.FT_P)    
+        
+        if self.FT_S is None and self.S is not None:
+            self.FT_S = Function(self.FFT)
+            self.FT_S = self.FFT.forward(self.S, self.FT_S)    
         
         if self.FT_Acc is None and self.Acc is not None:
             self.FT_Acc = Function(self.FFT,tensor=3)
@@ -168,8 +179,10 @@ class EnergyTransfer:
         rho = self.rho
         U = self.U
         B = self.B
+        S = self.S
         W = self.W
         FT_W = self.FT_W
+        FT_S = self.FT_S
         FT_B = self.FT_B
         FT_P = self.FT_P
         FT_Acc = self.FT_Acc
@@ -178,9 +191,11 @@ class EnergyTransfer:
 
         # clear Q terms
         W_Q = None
+        S_Q = None
         B_Q = None
         OneOverTwoSqrtRhogradBB_Q = None
         UdotGradW_Q = None
+        UdotGradS_Q = None
         UdotGradB_Q = None
         bDotGradB_Q = None
         BdotGradW_QoverSqrtRho = None
@@ -205,6 +220,7 @@ class EnergyTransfer:
 
             # clear K terms
             W_K = None
+            S_K = None	
             B_K = None
             
             for k in range(len(KBins)-1):
@@ -242,6 +258,37 @@ class EnergyTransfer:
                         self.addResultToDict(Result,"WW","UU","AnyToAny",KBin,QBin,totalSumA+totalSumB)
                         print("done with UU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))   
                 
+                #  - S_K * (U dot grad) S_Q - 0.5 S_K S_Q DivU
+                if "SS" in Terms:
+                    if S_K is None:
+                        S_K = self.getShellX(FT_S,KBins[k],KBins[k+1])
+                    
+                    if S_Q is None:
+                        S_Q = self.getShellX(FT_S,QBins[q],QBins[q+1])                        
+                        
+                    if UdotGradS_Q is None:
+                        UdotGradS_Q = MPIXdotGradYScalar(self.comm,U,S_Q)                        
+                    
+                    if DivU is None:
+                        DivU = MPIdivX(self.comm,U)
+                    
+                    
+                    localSum = - np.sum(S_K * UdotGradS_Q)              
+
+                    totalSumA = None
+                    totalSumA = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+                    
+                    localSum = - np.sum(0.5 * S_K * S_Q * DivU)                    
+
+                    totalSumB = None
+                    totalSumB = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)                    
+                    
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","SSA","AnyToAny",KBin,QBin,totalSumA)
+                        self.addResultToDict(Result,"WW","SSC","AnyToAny",KBin,QBin,totalSumB)
+                        self.addResultToDict(Result,"WW","SS","AnyToAny",KBin,QBin,totalSumA+totalSumB)
+                        print("done with SS for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))   
+                
                 if "BB" in Terms:
                     if B_K is None:
                         B_K = self.getShellX(FT_B,KBins[k],KBins[k+1])
@@ -271,6 +318,7 @@ class EnergyTransfer:
                         self.addResultToDict(Result,"WW","BBC","AnyToAny",KBin,QBin,totalSumB)
                         self.addResultToDict(Result,"WW","BB","AnyToAny",KBin,QBin,totalSumA+totalSumB)
                         print("done with BB for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))                
+
                 # W_K * (1/sqrt(rho) B dot grad) B_Q
                 if "BUT" in Terms:
                     if W_K is None:
@@ -550,14 +598,17 @@ class EnergyTransfer:
 
                 # clear K terms
                 W_K = None
+                S_K = None
                 B_K = None
         
 
             # clear Q terms
             W_Q = None
+            S_Q = None
             B_Q = None
             OneOverTwoSqrtRhogradBB_Q = None
             UdotGradW_Q = None
+            UdotGradS_Q = None
             UdotGradB_Q = None
             bDotGradB_Q = None
             BdotGradW_QoverSqrtRho = None
