@@ -373,6 +373,7 @@ getAndWriteStatisticsToFile(np.sqrt(np.sum(MPIrotX(comm,U)**2.,axis=0)),"AbsRotU
 if 'adiabatic' in FluidType:
     Ms2 = V2 / (Gamma * P / rho)
     getAndWriteStatisticsToFile(np.sqrt(Ms2),"Ms")
+    get2dHist('rho-P',rho,P)
 
 
 if "mhd" not in FluidType:
