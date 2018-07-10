@@ -26,41 +26,20 @@ Res = int(sys.argv[2])
 SimType = sys.argv[3] # Enzo or Athena
 FluidType = sys.argv[4] # hydro or mhd
 TurbType = sys.argv[5] # forced or decay
+globalMinMaxFile = sys.argv[6]
+
+try:
+    globalMinMax = pickle.load(open(globalMinMaxFile,'rb'))
+    if rank == 0:
+        print("Successfully loaded globalMinMax dict: %s" % globalMinMaxFile)
+except:
+    globalMinMax = {}
 
 if 'adiabatic' in FluidType:
+    Gamma = float(sys.argv[7])
     if rank == 0:
-        print("WARNING: Gamma = 5/3 hardcoded for adiabatic EOS")
-    Gamma = 5./3.
+        print("Using gamma = %.3f for adiabatic EOS" % Gamma)
 
-globalMinMax = {
-    'rho' : [0.16159,3.7477],
-    'lnrho' : [-1.8227,1.3211],
-    'log10rho' : [-0.79159,0.57376],
-    'u' : [2.6225e-05,2.3007],
-    'a' : [0.00033966,1436.7],
-    'AbsDivU' : [0,522.2],
-    'AbsRotU' : [0.001079,611.2],
-    'B' : [6.9895e-05,2.0628],
-    'AlfvenicMach' : [0.00015687,10037],
-    'plasmabeta' : [0.14199,3.9747e+08],
-    'log10plasmabeta' : [-2,8],
-    'DM_x' : [0.60,1.4],
-    'DM_y' : [0.60,1.4],
-    'DM_z' : [0.60,1.4],
-    'lnDM_x' : [-0.45,0.35],
-    'lnDM_y' : [-0.45,0.35],
-    'lnDM_z' : [-0.45,0.35],
-    'RM_x' : [-0.6,0.75],
-    'RM_y' : [-0.6,0.75],
-    'RM_z' : [-0.6,0.75],
-    'LOSB_x' : [-1.0,1.00],
-    'LOSB_y' : [-1.0,1.00],
-    'LOSB_z' : [-1.0,1.00],
-    'Angle_u_a' : [-1.,1.],
-    'Angle_uSol_a' : [-1.,1.],
-    'Angle_uDil_a' : [-1.,1.],
-    'TotPres' : [0.4,4.0],
-}
         
 order='unset'
 pField = None
@@ -274,6 +253,7 @@ def getVecPowSpecs(name,vec):
 
 getVecPowSpecs('u',U)
 getVecPowSpecs('rhoU',np.sqrt(rho)*U)
+getVecPowSpecs('rhoThirdU',rho**(1./3.)*U)
 
 
 def getAndWriteStatisticsToFile(field,name,bounds=None):
