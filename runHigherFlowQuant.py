@@ -418,6 +418,11 @@ if 'adiabatic' in FluidType:
     Ms2 = V2 / (Gamma * P / rho)
     getAndWriteStatisticsToFile(np.sqrt(Ms2),"Ms")
     get2dHist('rho-P',rho,P)
+    getAndWriteStatisticsToFile(P,"P")
+    getAndWriteStatisticsToFile(np.log10(P),"log10P")
+    T = P / (Gamma - 1.0) /rho
+    getAndWriteStatisticsToFile(T,"T")
+    getAndWriteStatisticsToFile(np.log10(T),"log10T")
 
 
 if "mhd" not in FluidType:
