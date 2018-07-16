@@ -336,6 +336,50 @@ def getCorrCoeff(X,Y):
 
     return cov / (stdX*stdY)
 
+def get2dHist(name,X,Y,bounds = None):
+    if bounds is None:
+        globXMin = comm.allreduce(np.min(X),op=MPI.MIN)
+        globXMax = comm.allreduce(np.max(X),op=MPI.MAX)
+        
+        globYMin = comm.allreduce(np.min(Y),op=MPI.MIN)
+        globYMax = comm.allreduce(np.max(Y),op=MPI.MAX)
+
+        bounds = [[globXMin,globXMax],[globYMin,globYMax]]
+        HistBins = "Snap"
+    else:
+        HistBins = "Sim"
+    
+    
+    XBins = np.linspace(bounds[0][0],bounds[0][1],129)
+    YBins = np.linspace(bounds[1][0],bounds[1][1],129)
+
+    hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
+    totalHist = comm.allreduce(hist)
+
+    if rank == 0:
+        tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
+        tmp[0] = XBins
+        tmp[1] = YBins
+        tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
+        tmp[:,:] = totalHist.astype(float)
+    
+    Xname, Yname = name.split('-')
+    if Xname in globalMinMax.keys() and Yname in globalMinMax.keys():
+        XBins = np.linspace(globalMinMax[Xname][0],globalMinMax[Xname][1],129)
+        YBins = np.linspace(globalMinMax[Yname][0],globalMinMax[Yname][1],129)
+
+        hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
+        totalHist = comm.allreduce(hist)
+        
+        HistBins = 'globalMinMax'
+
+        if rank == 0:
+            tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
+            tmp[0] = XBins
+            tmp[1] = YBins
+            tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
+            tmp[:,:] = totalHist.astype(float)
+
 getAndWriteStatisticsToFile(rho,"rho")
 getAndWriteStatisticsToFile(np.log(rho),"lnrho")
 getScaPowSpec('rho',rho)
@@ -445,50 +489,6 @@ getAndWriteStatisticsToFile(RM/DM,"LOSB_z")
 corrRhoB = getCorrCoeff(rho,np.sqrt(B2))
 if rank == 0:
     Outfile.require_dataset('rho-B/corr', (1,), dtype='f')[0] = corrRhoB
-
-def get2dHist(name,X,Y,bounds = None):
-    if bounds is None:
-        globXMin = comm.allreduce(np.min(X),op=MPI.MIN)
-        globXMax = comm.allreduce(np.max(X),op=MPI.MAX)
-        
-        globYMin = comm.allreduce(np.min(Y),op=MPI.MIN)
-        globYMax = comm.allreduce(np.max(Y),op=MPI.MAX)
-
-        bounds = [[globXMin,globXMax],[globYMin,globYMax]]
-        HistBins = "Snap"
-    else:
-        HistBins = "Sim"
-    
-    
-    XBins = np.linspace(bounds[0][0],bounds[0][1],129)
-    YBins = np.linspace(bounds[1][0],bounds[1][1],129)
-
-    hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
-    totalHist = comm.allreduce(hist)
-
-    if rank == 0:
-        tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
-        tmp[0] = XBins
-        tmp[1] = YBins
-        tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
-        tmp[:,:] = totalHist.astype(float)
-    
-    Xname, Yname = name.split('-')
-    if Xname in globalMinMax.keys() and Yname in globalMinMax.keys():
-        XBins = np.linspace(globalMinMax[Xname][0],globalMinMax[Xname][1],129)
-        YBins = np.linspace(globalMinMax[Yname][0],globalMinMax[Yname][1],129)
-
-        hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
-        totalHist = comm.allreduce(hist)
-        
-        HistBins = 'globalMinMax'
-
-        if rank == 0:
-            tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
-            tmp[0] = XBins
-            tmp[1] = YBins
-            tmp = Outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
-            tmp[:,:] = totalHist.astype(float)
 
 
 get2dHist('rho-B',rho,np.sqrt(B2))
