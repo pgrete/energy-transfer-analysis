@@ -36,9 +36,9 @@ needAccFields = False
 SplitTerms = Terms.split("-")
 thisTerms = []
 if "All" in SplitTerms:
-    if FluidType == "mhd":
+    if "mhd" in FluidType:
 	    thisTerms += ["UU", "BUT" ,"BUP" ,"UBT" ,"UBPb" ,"BB", "BUPbb", "UBPbb"]
-    if FluidType == "hydro":
+    if "hydro" in FluidType:
     	thisTerms += ["UU"]
 if "Int" in SplitTerms:
     thisTerms += ["SS"]
@@ -62,6 +62,13 @@ if SimType == "Enzo":
     magFields = ["Bx","By","Bz"]
     accFields = ['x-acceleration','y-acceleration','z-acceleration']
     loadPath = "DD" + ID + "/data" + ID
+elif SimType == "EnzoHDF":
+    rhoField = "Density"
+    velFields = ["x-velocity","y-velocity","z-velocity"]
+    magFields = ["Bx","By","Bz"]
+    accFields = ['x-acceleration','y-acceleration','z-acceleration']
+    loadPath = "DD" + ID 
+    order = "F"
 elif SimType == "Athena":
     rhoField = "density"
     pressField = None
@@ -74,8 +81,19 @@ elif SimType == "AthenaHDF":
     velFields = ["velocity_x","velocity_y","velocity_z"]
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
+    if 'adiabatic' in FluidType:
+        pressField = 'pressure'
     loadPath = ID
     order = "F"
+elif SimType == "AthenaHDFC":
+    rhoField = "density"
+    velFields = ["velocity_x","velocity_y","velocity_z"]
+    magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
+    accFields = ['acceleration_x','acceleration_y','acceleration_z']
+    loadPath = ID
+    if 'adiabatic' in FluidType:
+        pressField = 'pressure'
+    order = "C"
 elif SimType == "Nyx":
     sys.path.append("/home/h/hzfbhsws/Notebooks")
     import parameters as nyx
@@ -93,7 +111,7 @@ else:
 
 if FluidType == "hydro":
 	magFields = None
-elif FluidType != "mhd":
+elif 'mhd' not in FluidType:
 	print("Unknown FluidType - use 'mhd' or 'hydro'... FAIL")
 	sys.exit(1)
     
@@ -102,6 +120,10 @@ if needAccFields and accFields is None:
 	sys.exit(1)
 if not needAccFields:
     accFields = None
+
+if 'adiabatic' in FluidType and pressField is None:
+    print('Adiabatic EOS not tested/implemented yet for this FluidType.')
+    sys.exit(1)
 
 
 
@@ -115,7 +137,7 @@ if rank == 0:
 TimeDoneStart = MPI.Wtime() 
 if "HDF" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
-        rhoField,velFields,magFields,accFields,order)
+        rhoField,velFields,magFields,accFields,pressField,order,useMMAP=False)
 elif "Nyx" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
         rhoField,velFields,magFields,accFields,pressField)

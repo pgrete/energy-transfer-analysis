@@ -113,7 +113,7 @@ class EnergyTransfer:
         if KBin not in Result[formalism][term][method].keys():
             Result[formalism][term][method][KBin] = {}
                     
-        Result[formalism][term][method][KBin][QBin] = value           
+        Result[formalism][term][method][KBin][QBin] = float(value)
                     
     def calcBasicVars(self,formalism):
         """ calculate basic variables for the different formalisms, i.e.
@@ -627,5 +627,5 @@ class EnergyTransfer:
             Str = ""
             for Term in Terms:
                 Str += "-" + Term            
-            if self.comm.Get_rank() != 0:
+            if self.comm.Get_rank() != 0 and False:
                 pickle.dump(Result,open("tmp%s.pkl" % Str,"wb")) 

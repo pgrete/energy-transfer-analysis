@@ -89,3 +89,11 @@ def MPIgradX(comm,X):
                      MPIderiv2(comm,X,1),
                      MPIderiv2(comm,X,2),
                      ])
+def MPIrotX(comm,X):
+    """ returns  curl X = [ z_dy - y_dz, x_dz - z_dx, y_dx - x_dy ]
+    """
+    
+    return np.array([MPIderiv2(comm,X[2],1) - MPIderiv2(comm,X[1],2),
+                     MPIderiv2(comm,X[0],2) - MPIderiv2(comm,X[2],0),
+                     MPIderiv2(comm,X[1],0) - MPIderiv2(comm,X[0],1),
+                     ])
