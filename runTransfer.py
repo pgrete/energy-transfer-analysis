@@ -53,7 +53,6 @@ if len(thisTerms) == 0:
 	sys.exit(1)
 
 order = "unset"
-pField = None
 
 if SimType == "Enzo":
     gamma = 1.001 # quasi isothermal
@@ -83,7 +82,7 @@ elif SimType == "AthenaHDF":
     magFields = ["cell_centered_B_x","cell_centered_B_y","cell_centered_B_z"]
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     if 'adiabatic' in FluidType:
-        pField = 'pressure'
+        pressField = 'pressure'
     loadPath = ID
     order = "F"
 elif SimType == "AthenaHDFC":
@@ -93,7 +92,7 @@ elif SimType == "AthenaHDFC":
     accFields = ['acceleration_x','acceleration_y','acceleration_z']
     loadPath = ID
     if 'adiabatic' in FluidType:
-        pField = 'pressure'
+        pressField = 'pressure'
     order = "C"
 elif SimType == "Nyx":
     sys.path.append("/home/h/hzfbhsws/Notebooks")
@@ -122,7 +121,7 @@ if needAccFields and accFields is None:
 if not needAccFields:
     accFields = None
 
-if 'adiabatic' in FluidType and pField is None:
+if 'adiabatic' in FluidType and pressField is None:
     print('Adiabatic EOS not tested/implemented yet for this FluidType.')
     sys.exit(1)
 
@@ -138,14 +137,10 @@ if rank == 0:
 TimeDoneStart = MPI.Wtime() 
 if "HDF" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
-<<<<<<< HEAD
-        rhoField,velFields,magFields,accFields,pField,order,useMMAP=False)
-=======
-        rhoField,velFields,magFields,accFields,order)
+        rhoField,velFields,magFields,accFields,pressField,order,useMMAP=False)
 elif "Nyx" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
         rhoField,velFields,magFields,accFields,pressField)
->>>>>>> origin/master
 else:
     rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
         rhoField,velFields,magFields,accFields)
