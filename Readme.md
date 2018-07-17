@@ -72,9 +72,9 @@ they should be present in the `ds.field_list` array.
 The `runHigherFlowQuant.py` script does all the job. There are several command line options (all required) similar to the energy transfer script (a lot in the beginning should actually be merged).
 For example,
 ```
-mpirun -np 8 python runHigherFlowQuant.py 0024 128 AthenaHDF mhd-adiabatic forced
+mpirun -np 8 python runHigherFlowQuant.py 0024 128 AthenaHDF mhd-adiabatic forced /home/user/MinMax.pkl 1.66667
 ```
-Following five parameters need to be set (in that order)
+Following six parameters need to be set (in that order) with the 7th parameter being required only in the adiabatic case
 - ID (dtype int - e.g. 0024) of the data dump, also used as an identified for output files
 - Res (dtype int - e.g. 128) linear resolution of snapshot
 - SimType (dtype string - e.g. Enzo) to internally determine the field names yt should load (see section "Adding new simulation output" or which HDF files should be read.
@@ -86,6 +86,12 @@ Following five parameters need to be set (in that order)
 - TurbType (dtype string). Determines whether an acceleration field is present. Options are
   - "forced" (acceleration field is read and included in statistics)
   - "decay" (no acceleration field)
+- MinMaxDict (dtype string). Path to pickled python dictionary containing minimum and maximum values for quantities (used for creating histograms with a fixed [global] bounds)
+  - Style of dictionary is for example. {"rho" : [ 0., 10]}
+  - All quantities are always binned to the min and max values of the indiviual snapshot.
+  - If no dictionary is found under the given path (e.g., by setting it to a nonexisting file/path) no histograms with global bounds will be created
+- Gamma (dtype float). OPTIONAL 
+  - Ratio of specific heats used in the simulation in case of an adiabatic EOS
 
 ## Current limitations
 - Most content in a single, mostly undocumented file...
