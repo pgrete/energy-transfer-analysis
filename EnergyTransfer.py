@@ -1,5 +1,5 @@
 import numpy as np
-from mpi4py_fft.mpifft import PFFT, Function
+#from mpi4py_fft.mpifft import PFFT, Function
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX
 import time
 import pickle
@@ -8,7 +8,7 @@ import sys
 class EnergyTransfer:
 
     
-    def __init__(self, MPI, RES, rho, U, B, Acc, P, gamma):
+    def __init__(self, MPI, RES, rho, U, B, Acc, P, gamma, PFFT):
         
         self.gamma = gamma
         self.MPI = MPI
@@ -42,12 +42,23 @@ class EnergyTransfer:
         TimeStart = MPI.Wtime()
         
         N = np.array([RES,RES,RES], dtype=int)
-        # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
-        L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
-        self.FFT = PFFT(self.comm,N, axes=(0,1,2),collapse=False, slab=True,dtype=np.float64)
+        self.FFT = PFFT
 
-        localK = self.FFT.get_local_wavenumbermesh(L)
-        self.localKmag = np.linalg.norm(localK,axis=0)
+        localK = self.FFT.get_k_adim_loc()
+        localKdims = self.FFT.get_shapeK_loc()
+        
+        #k-x
+        ifreq = np.fromfunction(lambda i,j,k : localK[0][i], 
+            (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
+        #k-y
+        jfreq = np.fromfunction(lambda i,j,k : localK[1][j], 
+            (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
+        #k-z
+        kfreq = np.fromfunction(lambda i,j,k : localK[2][k], 
+            (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
+
+
+        self.localKmag = np.sqrt(ifreq*ifreq+jfreq*jfreq+kfreq*kfreq)
 
         TimeDoneSetup = MPI.Wtime() - TimeStart
         TimeDoneSetup = self.comm.gather(TimeDoneSetup)
@@ -62,14 +73,14 @@ class EnergyTransfer:
         """ extracts shell X-0.5 < K <X+0.5 of FTquant """
 
         if FTquant.shape[0] == 3:    
-            Quant_X = Function(self.FFT,False,tensor=3)
+            Quant_X = np.empty((3,) + self.FFT.get_shapeX_loc(),dtype=np.float64)
             for i in range(3):
                 tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant[i],0.)
-                Quant_X[i] = self.FFT.backward(tmp,Quant_X[i])
+                self.FFT.ifft_as_arg_destroy(tmp,Quant_X[i])
         else:
-            Quant_X = Function(self.FFT,False)
+            Quant_X = np.empty(self.FFT.get_shapeX_loc(),dtype=np.float64)
             tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant,0.)
-            Quant_X = self.FFT.backward(tmp,Quant_X)        
+            self.FFT.ifft_as_arg_destroy(tmp,Quant_X)        
 
         return Quant_X
     
@@ -126,7 +137,7 @@ class EnergyTransfer:
         B = self.B
 
         if self.W is None:
-            self.W = Function(self.FFT,False,tensor=3)                                
+            self.W = np.empty((3,) + self.FFT.get_shapeX_loc(),dtype=np.float64)      
             for i in range(3):
                 self.W[i] = np.sqrt(rho) * U[i]
 
@@ -134,27 +145,27 @@ class EnergyTransfer:
             self.S = np.sqrt(self.gamma*P)
 
         if self.FT_W is None:
-            self.FT_W = Function(self.FFT,tensor=3)
+            self.FT_W = np.empty((3,) + self.FFT.get_shapeK_loc(),dtype=np.complex128)
             for i in range(3):
-                self.FT_W[i] = self.FFT.forward(self.W[i], self.FT_W[i])            
+                self.FFT.fft_as_arg(self.W[i], self.FT_W[i])            
             
         if self.FT_B is None and self.B is not None:
-            self.FT_B = Function(self.FFT,tensor=3)
+            self.FT_B = np.empty((3,) + self.FFT.get_shapeK_loc(),dtype=np.complex128)
             for i in range(3):
-                self.FT_B[i] = self.FFT.forward(self.B[i], self.FT_B[i])    
+                self.FFT.fft_as_arg(self.B[i], self.FT_B[i])    
         
         if self.FT_P is None and self.P is not None:
-            self.FT_P = Function(self.FFT)
-            self.FT_P = self.FFT.forward(self.P, self.FT_P)    
+            self.FT_P = np.empty(self.FFT.get_shapeK_loc(),dtype=np.complex128)
+            self.FFT.fft_as_arg(self.P, self.FT_P)    
         
         if self.FT_S is None and self.S is not None:
-            self.FT_S = Function(self.FFT)
-            self.FT_S = self.FFT.forward(self.S, self.FT_S)    
+            self.FT_S = np.empty(self.FFT.get_shapeK_loc(),dtype=np.complex128)
+            self.FFT.fft_as_arg(self.S, self.FT_S)    
         
         if self.FT_Acc is None and self.Acc is not None:
-            self.FT_Acc = Function(self.FFT,tensor=3)
+            self.FT_Acc = np.empty((3,) + self.FFT.get_shapeK_loc(),dtype=np.complex128)
             for i in range(3):
-                self.FT_Acc[i] = self.FFT.forward(self.Acc[i], self.FT_Acc[i])    
+                self.FFT.fft_as_arg(self.Acc[i], self.FT_Acc[i])    
             
     
     def getTransferWWAnyToAny(self,Result,KBins,QBins, Terms = []):

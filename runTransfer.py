@@ -14,6 +14,7 @@ import time
 import pickle
 import sys
 import os
+from fluidfft.fft3d.mpi_with_p3dfft import FFT3DMPIWithP3DFFT as PFFT 
 
 ID = sys.argv[1]
 Terms = sys.argv[2]
@@ -22,7 +23,7 @@ SimType = sys.argv[4] # Enzo or Athena
 FluidType = sys.argv[5] # hydro or mhd
 BinType = sys.argv[6] # lin or log
 
-
+PFFT = PFFT(Res,Res,Res)
 
 gamma = 1.0 # isothermal
 
@@ -137,7 +138,7 @@ if rank == 0:
 TimeDoneStart = MPI.Wtime() 
 if "HDF" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
-        rhoField,velFields,magFields,accFields,pressField,order,useMMAP=False)
+        rhoField,velFields,magFields,accFields,pressField,order,PFFT,useMMAP=False)
 elif "Nyx" in SimType:
     rho, U , B, Acc, P = readAllFieldsWithYT(loadPath,Res,
         rhoField,velFields,magFields,accFields,pressField)
@@ -172,7 +173,7 @@ QBins = Bins
 if "PU" not in thisTerms and "SS" not in thisTerms:
     P = None
 
-ET = EnergyTransfer(MPI,Res,rho,U,B,Acc,P,gamma)
+ET = EnergyTransfer(MPI,Res,rho,U,B,Acc,P,gamma,PFFT)
 
 
 """ Result dictionary of shape
