@@ -193,6 +193,8 @@ class EnergyTransfer:
         W_Q = None
         S_Q = None
         B_Q = None
+        SDivW_QoverGammaSqrtRho = None
+        OneOverGammaSqrtRhogradSS_Q = None
         OneOverTwoSqrtRhogradBB_Q = None
         UdotGradW_Q = None
         UdotGradS_Q = None
@@ -558,6 +560,49 @@ class EnergyTransfer:
                         self.addResultToDict(Result,"WW","UBPbTot","AnyToAny",KBin,QBin,totalSumA+totalSumB)
                         print("done with UBPbC for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))    
                 
+                
+                if "SU" in Terms:
+                    
+                    if S_Q is None:
+                        S_Q = self.getShellX(FT_S,QBins[q],QBins[q+1])
+                        
+                    # TODO reuse vars here with BUP terms
+                    if OneOverGammaSqrtRhogradSS_Q is None:
+                        OneOverGammaSqrtRhogradSS_Q = MPIgradX(self.comm, (S * S_Q))/ (self.gamma * np.sqrt(rho))
+                        
+                    if W_K is None:
+                        W_K = self.getShellX(FT_W,KBins[k],KBins[k+1])
+                                            
+                    
+                    localSum = - np.sum(W_K * OneOverGammaSqrtRhogradSS_Q)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+                    
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","SU","AnyToAny",KBin,QBin,totalSum)
+                        print("done with SU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))                        
+
+                if "US" in Terms:
+
+                    if S_K is None:
+                        S_K = self.getShellX(FT_S,KBins[k],KBins[k+1])                      
+                        
+                    if W_Q is None:
+                        W_Q = self.getShellX(FT_W,QBins[q],QBins[q+1])  
+                    # TODO reuse vars here with BUP terms
+                    if SDivW_QoverGammaSqrtRho is None:
+                        SDivW_QoverGammaSqrtRho = S * MPIdivX(self.comm, W_Q/np.sqrt(rho)/self.gamma )                         
+                        
+                    localSum = - np.sum(S_K * SDivW_QoverGammaSqrtRho)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)                        
+                        
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","US","AnyToAny",KBin,QBin,totalSum)
+                        print("done with US for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))                        
+
                 # - W_K 1/sqrt(rho) grad P_Q
                 if "PU" in Terms:
 
@@ -607,6 +652,8 @@ class EnergyTransfer:
             S_Q = None
             B_Q = None
             OneOverTwoSqrtRhogradBB_Q = None
+            SDivW_QoverGammaSqrtRho  = None
+            OneOverGammaSqrtRhogradSS_Q = None
             UdotGradW_Q = None
             UdotGradS_Q = None
             UdotGradB_Q = None

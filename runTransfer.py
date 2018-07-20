@@ -41,7 +41,7 @@ if "All" in SplitTerms:
     if "hydro" in FluidType:
     	thisTerms += ["UU"]
 if "Int" in SplitTerms:
-    thisTerms += ["SS"]
+    thisTerms += ["SS","US","SU"]
 if "Pres" in SplitTerms:
     thisTerms += ["PU"]
 if "Forc" in SplitTerms:
