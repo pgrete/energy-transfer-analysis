@@ -275,12 +275,12 @@ class EnergyTransfer:
                         DivU = MPIdivX(self.comm,U)
                     
                     
-                    localSum = - np.sum(S_K * UdotGradS_Q)              
+                    localSum = - 2./self.gamma/(self.gamma - 1.) * np.sum(S_K * UdotGradS_Q)
 
                     totalSumA = None
                     totalSumA = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
                     
-                    localSum = - np.sum(0.5 * S_K * S_Q * DivU)                    
+                    localSum = - 1./self.gamma/(self.gamma - 1.) * np.sum(0.5 * S_K * S_Q * DivU)
 
                     totalSumB = None
                     totalSumB = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)                    
