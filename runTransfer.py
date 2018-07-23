@@ -25,6 +25,14 @@ BinType = sys.argv[6] # lin or log
 
 
 gamma = 1.0 # isothermal
+if 'adiabatic' in FluidType:
+    try:
+        gamma = float(sys.argv[7])
+        if rank == 0:
+            print("Using gamma = %.3f for adiabatic EOS" % gamma)
+    except IndexError:
+        if rank == 0:
+            print("Couldn't determine gamma for adiabatic sim. Make sure to set it!")
 
 rhoField = None
 pressField = None
