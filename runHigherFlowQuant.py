@@ -79,7 +79,7 @@ else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)
 
-if FluidType == "hydro":
+if "hydro" in FluidType:
 	magFields = None
 elif 'mhd' not in FluidType:
 	print("Unknown FluidType - use 'mhd' or 'hydro'... FAIL")
