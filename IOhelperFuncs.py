@@ -4,12 +4,14 @@ from mpi4py import MPI
 import sys
 import h5py
 
+yt.funcs.mylog.setLevel(40)
+
 comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
 def readAllFieldsWithYT(loadPath,Res,
-    rhoField,velFields,magFields,accFields,pressField=None):
+    rhoField,velFields,magFields,accFields,pressField=None,order=None):
     """
     Reads all fields using the yt frontend. Data is read in parallel.
 
@@ -31,8 +33,9 @@ def readAllFieldsWithYT(loadPath,Res,
         print("Chunk dimensions = ", FinalShape)
         print("WARNING: remember assuming domain of L = 1")
     
-
-    ad = ds.h.covering_grid(level=0, left_edge=[startPos,0.0,0.0],dims=dims)
+    thisLeftEdge = ds.domain_left_edge
+    thisLeftEdge[0] += ds.quan(startPos,'code_length')
+    ad = ds.h.covering_grid(level=0, left_edge=thisLeftEdge,dims=dims)
     
     if rhoField is not None:
         rho = ad[rhoField].d

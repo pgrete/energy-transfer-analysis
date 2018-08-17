@@ -16,7 +16,6 @@ import h5py
 import os
 from scipy.stats import binned_statistic
 from math import ceil
-from configobj import ConfigObj
 from IOhelperFuncs import readAllFieldsWithYT, readAllFieldsWithHDF 
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIrotX
 
@@ -54,6 +53,8 @@ if SimType == "AthenaHDF":
         pField = 'pressure'
     loadPath = ID
     order = "F"
+    readAllFields = readAllFieldsWithHDF
+    OutfileName = str(ID).zfill(4) + "-stats-" + str(Res) + ".hdf5"
 elif SimType == "AthenaHDFC":
     rhoField = "density"
     velFields = ["velocity_x","velocity_y","velocity_z"]
@@ -63,6 +64,17 @@ elif SimType == "AthenaHDFC":
         pField = 'pressure'
     loadPath = ID
     order = "C"
+    readAllFields = readAllFieldsWithHDF
+    OutfileName = str(ID).zfill(4) + "-stats-" + str(Res) + ".hdf5"
+elif SimType == "AthenaPP":
+    rhoField = "density"
+    velFields = ["vel1","vel2","vel3"]
+    if 'adiabatic' in FluidType:
+        pField = 'press'
+    loadPath = ID
+    order = None
+    readAllFields = readAllFieldsWithYT
+    OutfileName = ID.split('.')[2]  + "-stats-" + str(Res) + ".hdf5"
 else:
     print("Unknown SimType - use 'Enzo' or 'Athena'... FAIL")
     sys.exit(1)
@@ -84,7 +96,7 @@ if rank == 0:
     sys.stdout.flush()
 
 TimeDoneStart = MPI.Wtime() 
-rho, U , B, Acc, P = readAllFieldsWithHDF(loadPath,Res,
+rho, U , B, Acc, P = readAllFields(loadPath,Res,
     rhoField,velFields,magFields,accFields,pField,order)
 
 TimeDoneReading = MPI.Wtime() - TimeDoneStart
@@ -98,7 +110,7 @@ TimeDoneReading = MPI.Wtime()
 
 
 if rank == 0:
-    Outfile = h5py.File(str(ID).zfill(4) + "-stats-" + str(Res) + ".hdf5", "w")
+    Outfile = h5py.File(OutfileName, "w")
 
 kMaxInt = ceil(Res*0.5*np.sqrt(3.))
 Bins = np.linspace(0.5,kMaxInt + 0.5,kMaxInt+1)
