@@ -211,6 +211,24 @@ def getScaPowSpec(name,field):
         Outfile.require_dataset(name + '/PowSpec/Bins', (1,len(Bins)), dtype='f')[0] = Bins
         Outfile.require_dataset(name + '/PowSpec/Full', (4,len(Bins)-1), dtype='f')[:,:] = PS_Full
 
+# e.g. (38) in https://arxiv.org/pdf/1101.0150.pdf
+def getCoSpec(name,fieldA,fieldB):
+
+    FT_fieldA = Function(FFT)
+    FT_fieldA = FFT.forward(fieldA, FT_fieldA)
+
+    FT_fieldB = Function(FFT)
+    FT_fieldB = FFT.forward(fieldB, FT_fieldB)
+
+    FT_CoSpec = FT_fieldA * np.conj(FT_fieldB)
+    PS_Abs = normedSpec(localKmag.reshape(-1),np.abs(FT_CoSpec).reshape(-1),Bins)
+    PS_Real = normedSpec(localKmag.reshape(-1),np.real(FT_CoSpec).reshape(-1),Bins)
+
+    if rank == 0:
+        Outfile.require_dataset(name + '/CoSpec/Bins', (1,len(Bins)), dtype='f')[0] = Bins
+        Outfile.require_dataset(name + '/CoSpec/Abs', (4,len(Bins)-1), dtype='f')[:,:] = PS_Abs
+        Outfile.require_dataset(name + '/CoSpec/Real', (4,len(Bins)-1), dtype='f')[:,:] = PS_Real
+
 def getVecPowSpecs(name,vec):
 
     FT_vec = Function(FFT,tensor=3)
@@ -411,11 +429,13 @@ if Acc is not None:
         np.sum(Acc*UDil,axis=0)/(
             np.linalg.norm(Acc,axis=0)*np.linalg.norm(UDil,axis=0)),"Angle_uDil_a")
 
-getAndWriteStatisticsToFile(np.abs(MPIdivX(comm,U)),"AbsDivU")
+DivU = MPIdivX(comm,U)
+getAndWriteStatisticsToFile(np.abs(DivU),"AbsDivU")
 getAndWriteStatisticsToFile(np.sqrt(np.sum(MPIrotX(comm,U)**2.,axis=0)),"AbsRotU")
 
 if 'adiabatic' in FluidType:
-    Ms2 = V2 / (Gamma * P / rho)
+    c_s2 = Gamma * P / rho
+    Ms2 = V2 / (c_s2)
     getAndWriteStatisticsToFile(np.sqrt(Ms2),"Ms")
     get2dHist('rho-P',rho,P)
     getAndWriteStatisticsToFile(P,"P")
@@ -424,6 +444,14 @@ if 'adiabatic' in FluidType:
     getAndWriteStatisticsToFile(T,"T")
     getAndWriteStatisticsToFile(np.log10(T),"log10T")
     get2dHist('rho-T',rho,T)
+
+    K = T/rho**(2./3.)
+    get2dHist('T-K',T,K)
+    get2dHist('rho-K',rho,K)
+
+    getCoSpec('PD',P,DivU)
+
+    getScaPowSpec('eint',np.sqrt(rho*c_s2))
 
 
 if "mhd" not in FluidType:
@@ -440,6 +468,8 @@ getAndWriteStatisticsToFile(0.5 * B2,"MagEnDensity")
 if 'adiabatic' in FluidType:
     TotPres = P + B2/2.
     corrPBcomp = getCorrCoeff(P,np.sqrt(B2)/rho**(2./3.))
+    get2dHist('P-B',P,np.sqrt(B2))
+    get2dHist('P-MagEnDensity',P,0.5 * B2)
 else:
     TotPres = rho + B2/2.
     corrPBcomp = getCorrCoeff(rho,np.sqrt(B2)/rho**(2./3.))
@@ -496,9 +526,18 @@ corrRhoB = getCorrCoeff(rho,np.sqrt(B2))
 if rank == 0:
     Outfile.require_dataset('rho-B/corr', (1,), dtype='f')[0] = corrRhoB
 
+if 'adiabatic' in FluidType:
+    rhoToGamma = rho**Gamma
+    corrRhoToGammaB = getCorrCoeff(rhoToGamma,np.sqrt(B2))
+    if rank == 0:
+        Outfile.require_dataset('rhoToGamma-B/corr', (1,), dtype='f')[0] = corrRhoToGammaB
+
+    get2dHist('rhoToGamma-B',rhoToGamma,np.sqrt(B2))
+    get2dHist('rhoToGamma-MagEnDensity',rhoToGamma,0.5 * B2)
 
 get2dHist('rho-B',rho,np.sqrt(B2))
 get2dHist('log10rho-B',np.log10(rho),np.sqrt(B2))
+
 
 if rank == 0:
     Outfile.close()
