@@ -37,8 +37,13 @@ except:
 
 if 'adiabatic' in FluidType:
     Gamma = float(sys.argv[7])
+    CoolType, CoolFac = sys.argv[8].split('-')
+    CoolFac = float(CoolFac)
+    CoolType = str(CoolType)
     if rank == 0:
         print("Using gamma = %.3f for adiabatic EOS" % Gamma)
+        print("Cooling = %s with prefac %.3f" % (CoolType,CoolFac))
+
 
         
 order='unset'
@@ -449,6 +454,19 @@ if 'adiabatic' in FluidType:
     get2dHist('T-K',T,K)
     get2dHist('rho-K',rho,K)
 
+    if CoolType == 'FF':
+        CoolRate = CoolFac * rho**2. * T**0.5
+    elif CoolType == 'Lin':
+        CoolRate = CoolFac * rho * T
+    else:
+        CoolRate = None
+
+    if CoolRate is not None:
+        getAndWriteStatisticsToFile(CoolRate,"CoolRate")
+        get2dHist('CoolRate-K',CoolRate,K)
+        get2dHist('CoolRate-rho',CoolRate,rho)
+        get2dHist('CoolRate-P',CoolRate,P)
+
     getCoSpec('PD',P,DivU)
 
     getScaPowSpec('eint',np.sqrt(rho*c_s2))
@@ -468,16 +486,22 @@ getAndWriteStatisticsToFile(0.5 * B2,"MagEnDensity")
 if 'adiabatic' in FluidType:
     TotPres = P + B2/2.
     corrPBcomp = getCorrCoeff(P,np.sqrt(B2)/rho**(2./3.))
+    corrPB = getCorrCoeff(P,np.sqrt(B2))
+    corrPB2 = getCorrCoeff(P,B2)
     get2dHist('P-B',P,np.sqrt(B2))
     get2dHist('P-MagEnDensity',P,0.5 * B2)
 else:
     TotPres = rho + B2/2.
     corrPBcomp = getCorrCoeff(rho,np.sqrt(B2)/rho**(2./3.))
+    corrPB = getCorrCoeff(rho,np.sqrt(B2))
+    corrPB2 = getCorrCoeff(rho,B2)
 
 getAndWriteStatisticsToFile(TotPres,"TotPres")
 
 if rank == 0:
     Outfile.require_dataset('P-Bcomp/corr', (1,), dtype='f')[0] = corrPBcomp
+    Outfile.require_dataset('P-B/corr', (1,), dtype='f')[0] = corrPB
+    Outfile.require_dataset('P-B2/corr', (1,), dtype='f')[0] = corrPB2
 
 AlfMach2 = V2*rho/B2
 AlfMach = np.sqrt(AlfMach2)
@@ -529,8 +553,16 @@ if rank == 0:
 if 'adiabatic' in FluidType:
     rhoToGamma = rho**Gamma
     corrRhoToGammaB = getCorrCoeff(rhoToGamma,np.sqrt(B2))
+    corrPRhoToGamma = getCorrCoeff(rhoToGamma,P)
+    corrPRho = getCorrCoeff(rho,P)
+    corrTotPresRhoToGamma = getCorrCoeff(rhoToGamma,TotPres)
+    corrTotPresRho = getCorrCoeff(rho,TotPres)
     if rank == 0:
         Outfile.require_dataset('rhoToGamma-B/corr', (1,), dtype='f')[0] = corrRhoToGammaB
+        Outfile.require_dataset('rhoToGamma-P/corr', (1,), dtype='f')[0] = corrPRhoToGamma
+        Outfile.require_dataset('rhoToGamma-TotPres/corr', (1,), dtype='f')[0] = corrTotPresRhoToGamma
+        Outfile.require_dataset('rho-P/corr', (1,), dtype='f')[0] = corrPRho
+        Outfile.require_dataset('rho-TotPres/corr', (1,), dtype='f')[0] = corrTotPresRho
 
     get2dHist('rhoToGamma-B',rhoToGamma,np.sqrt(B2))
     get2dHist('rhoToGamma-MagEnDensity',rhoToGamma,0.5 * B2)
