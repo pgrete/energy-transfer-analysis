@@ -8,6 +8,36 @@ comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
+def read_fields(args):
+    """
+    Read all fields of a simulation snapshot
+
+    args : forwarded command line arguments from the main script
+    """
+    # data dictionary
+    fields = {}
+    pressField = None
+    magFields = None
+    accFields = None
+    
+
+    if args['data_type'] == 'Enzo':
+        rhoField = "Density"
+        velFields = ["x-velocity","y-velocity","z-velocity"]
+        if args['b']:
+            magFields = ["Bx","By","Bz"]
+        if args['forced']:
+            accFields = ['x-acceleration','y-acceleration','z-acceleration']
+
+        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
+                                      rhoField, velFields, magFields, 
+                                      accFields, pressField)
+
+    else:
+        raise SystemExit('Unknown data type: ', data_type)
+
+    return fields
+
 def readAllFieldsWithYT(loadPath,Res,
     rhoField,velFields,magFields,accFields,pressField=None):
     """
@@ -16,8 +46,9 @@ def readAllFieldsWithYT(loadPath,Res,
     """
 	
     if Res % size != 0:
-        print("Data cannot be split evenly among processes. Abort (for now) - fix me!")
-        sys.exit(1)
+        raise SystemExit(
+            'Data cannot be split evenly among processes. ' +
+            'Abort (for now) - fix me!')
         
     FinalShape = (Res//size,Res,Res)   
     
@@ -70,7 +101,13 @@ def readAllFieldsWithYT(loadPath,Res,
     else:
         Acc = None
         
-    return rho, U, B, Acc, P
+    return {
+        'rho' : rho, 
+        'U'   : U, 
+        'B'   : B,
+        'Acc' : Acc,
+        'P'   : P
+    }
 
 # mmet by https://gist.github.com/rossant/7b4704e8caeb8f173084
 def _mmap_h5(path, h5path):

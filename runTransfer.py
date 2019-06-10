@@ -1,8 +1,5 @@
 from mpi4py import MPI
 
-comm  = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
 
 comm.Barrier()
 TimeStart = MPI.Wtime()
@@ -15,24 +12,7 @@ import pickle
 import sys
 import os
 
-ID = sys.argv[1]
-Terms = sys.argv[2]
-Res = int(sys.argv[3])
-SimType = sys.argv[4] # Enzo or Athena
-FluidType = sys.argv[5] # hydro or mhd
-BinType = sys.argv[6] # lin or log
 
-
-
-gamma = 1.0 # isothermal
-if 'adiabatic' in FluidType:
-    try:
-        gamma = float(sys.argv[7])
-        if rank == 0:
-            print("Using gamma = %.3f for adiabatic EOS" % gamma)
-    except IndexError:
-        if rank == 0:
-            print("Couldn't determine gamma for adiabatic sim. Make sure to set it!")
 
 rhoField = None
 pressField = None
@@ -160,58 +140,9 @@ if rank == 0:
     print("Reading done in %.3g +/- %.3g" % (np.mean(TimeDoneReading),np.std(TimeDoneReading)))
     sys.stdout.flush()
 
-if BinType == "Lin":
-	Bins = np.concatenate((np.linspace(0.5,Res/2-0.5,Res/2,endpoint=True),[float(Res)/2.*np.sqrt(3)]))
-elif BinType == "Log":
-        ResExp = np.log(Res/8)/np.log(2) * 4 + 1
-        Bins = np.concatenate((np.array([0.]),
-                        4.* 2** ((np.arange(0,ResExp + 1) - 1.) /4.)))
-
-elif BinType == "testing":
-    Bins = [0.5,1.5,2.5,16.0,26.5,28.5,32.0]
-
-else:
-	print("Unknown BinType - use 'Lin' or 'Log'... FAIL")
-	sys.exit(1)
-
-KBins = Bins
-QBins = Bins
 
 if "PU" not in thisTerms and "SS" not in thisTerms:
     P = None
 
-ET = EnergyTransfer(MPI,Res,rho,U,B,Acc,P,gamma)
 
-
-""" Result dictionary of shape
-Result[formalism][term][method][target wavenumber][source wavenumber]
-| "WW"
-|--| "UUA"
-|--|---| "AnyToAny"
-|--|---|-----| K
-|--|---|-----|-| Q = value
-|--|---| "AllToOne"
-|--|---|-----| K = value
-|--| "UUC
-|--| etc.
-"""
-
-if rank == 0:
-    DumpFile = str(ID).zfill(4) + "-" + Terms + "-" + BinType + "-" + str(Res) + ".pkl"
-
-    if os.path.isfile(DumpFile):
-        print("Reading previous transfer file")
-        if sys.version_info[0] < 3:
-            Result = pickle.load(open(DumpFile,"rb"))
-        else:
-            Result = pickle.load(open(DumpFile,"rb"),encoding='latin1')
-
-    else:
-        Result = {}
-else:
-    Result = None
-
-ET.getTransferWWAnyToAny(Result,KBins,QBins, Terms = thisTerms)
-if comm.Get_rank() == 0:
-    pickle.dump(Result,open(DumpFile,"wb"))    
 
