@@ -15,30 +15,12 @@ class EnergyTransfer:
         self.MPI = MPI
         self.comm = MPI.COMM_WORLD
         self.RES = RES
-        if 'rho' in fields.keys():
-            self.rho = fields['rho']
-        else:
-            self.rho = None
 
-        if 'U' in fields.keys():
-            self.U = fields['U']
-        else:
-            self.U = None
-
-        if 'B' in fields.keys():
-            self.B = fields['B']
-        else:
-            self.B = None
-
-        if 'Acc' in fields.keys():
-            self.Acc = fields['Acc']
-        else:
-            self.Acc = None
-
-        if 'P' in fields.keys():
-            self.P = fields['P']
-        else:
-            self.P = None
+        self.rho = fields['rho']
+        self.U = fields['U']
+        self.B = fields['B']
+        self.Acc = fields['Acc']
+        self.P = fields['P']
 
         # Variables that we might (or might not) use later depending on the different definitons of terms
         self.W = None
