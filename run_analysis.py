@@ -2,6 +2,7 @@ import argparse
 from mpi4py import MPI
 from IOhelperFuncs import read_fields 
 from EnergyTransfer import EnergyTransfer
+from FlowAnalysis import FlowAnalysis
 import os
 import sys
 import pickle
@@ -43,6 +44,10 @@ parser.add_argument('--outfile',
                     required=True,
                     type=str,
                     help='set file to store results')
+
+parser.add_argument('--extrema_file',
+                    type=str,
+                    help='Pickled Python dict containing extrema for flow analysis')
 
 parser.add_argument('-b',
                     action='store_true',
@@ -198,3 +203,9 @@ if args['type'] == 'transfer':
     if rank == 0:
         pickle.dump(results,open(outfile,"wb"))    
 
+elif args['type'] == 'flow':
+    
+    FlowAnalysis(MPI,args,fields)
+    
+else:
+    raise SystemExit('Unknown transfer type: ', args['type'])
