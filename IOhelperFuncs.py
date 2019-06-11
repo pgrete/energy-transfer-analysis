@@ -30,7 +30,24 @@ def read_fields(args):
             accFields = ['x-acceleration','y-acceleration','z-acceleration']
 
         fields  = readAllFieldsWithYT(args['data_path'], args['res'],
-                                      rhoField, velFields, magFields, 
+                                      rhoField, velFields, magFields,
+                                      accFields, pressField)
+
+    elif args['data_type'] == 'AthenaPP':
+        rhoField = ('athena_pp', 'rho')
+        velFields = [('athena_pp', 'vel1'), ('athena_pp', 'vel2'), ('athena_pp', 'vel3')]
+        if args['b']:
+            magFields = [('athena_pp', 'Bcc1'), ('athena_pp', 'Bcc2'), ('athena_pp', 'Bcc3')]
+        if args['forced']:
+            raise SystemExit('Need to define focing fields for AthenaPP')
+            #accFields = ['x-acceleration','y-acceleration','z-acceleration']
+
+        if args['eos'] == 'adiabatic':
+            pressField = ('athena_pp', 'press')
+
+
+        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
+                                      rhoField, velFields, magFields,
                                       accFields, pressField)
 
     else:
@@ -54,16 +71,20 @@ def readAllFieldsWithYT(loadPath,Res,
     
     ds = yt.load(loadPath)
     dims = ds.domain_dimensions
+    left_edge = ds.domain_left_edge
+    right_edge = ds.domain_right_edge
+
     dims[0] /= size
 
-    startPos = rank * 1./np.float(size)
+    start_pos = left_edge
+    start_pos[0] += rank * (right_edge[0] - left_edge[0])/np.float(size)
     if rank == 0:
         print("Loading "+ loadPath)
         print("Chunk dimensions = ", FinalShape)
         print("WARNING: remember assuming domain of L = 1")
     
 
-    ad = ds.h.covering_grid(level=0, left_edge=[startPos,0.0,0.0],dims=dims)
+    ad = ds.h.covering_grid(level=0, left_edge=start_pos,dims=dims)
     
     if rhoField is not None:
         rho = ad[rhoField].d

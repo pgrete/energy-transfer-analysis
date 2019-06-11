@@ -32,7 +32,7 @@ parser.add_argument('--type',
 parser.add_argument('--data_type',
                     required=True,
                     type=str,
-                    choices=['Enzo'],
+                    choices=['Enzo', 'AthenaPP'],
                     help='set data cube type')
 
 parser.add_argument('--data_path',

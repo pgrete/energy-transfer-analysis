@@ -56,7 +56,6 @@ class FlowAnalysis:
                         slab=True, dtype=np.float64)
 
         FT_vec = newDistArray(self.FFT,False,rank=1)
-        print(FT_vec.shape)
         localK = get_local_wavenumbermesh(self.FFT, L)
         self.localKmag = np.linalg.norm(localK,axis=0)
 
