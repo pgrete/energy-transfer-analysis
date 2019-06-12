@@ -55,7 +55,6 @@ class FlowAnalysis:
         self.FFT = PFFT(self.comm, N, axes=(0,1,2), collapse=False,
                         slab=True, dtype=np.float64)
 
-        FT_vec = newDistArray(self.FFT,False,rank=1)
         localK = get_local_wavenumbermesh(self.FFT, L)
         self.localKmag = np.linalg.norm(localK,axis=0)
 
@@ -276,7 +275,8 @@ class FlowAnalysis:
         
         N = float(self.comm.allreduce(vec.size))
         total = self.comm.allreduce(np.sum(vec,axis=(1,2,3)))
-        Harm = total / N
+        # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
+        Harm = total / (N/3)
         
         FT_vec = newDistArray(self.FFT,rank=1)
         for i in range(3):
