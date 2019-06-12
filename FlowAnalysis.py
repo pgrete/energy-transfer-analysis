@@ -58,7 +58,7 @@ class FlowAnalysis:
         localK = get_local_wavenumbermesh(self.FFT, L)
         self.localKmag = np.linalg.norm(localK,axis=0)
 
-        localKunit = np.copy(localK)
+        self.localKunit = np.copy(localK)
         # fixing division by 0 for harmonic part
         if self.rank == 0:
             if self.localKmag[0,0,0] == 0.:
@@ -69,7 +69,7 @@ class FlowAnalysis:
             if (self.localKmag == 0.).any():
                 raise SystemExit("[%d] kmag not zero where it's supposed to be" % self.rank)
 
-        localKunit /= self.localKmag
+        self.localKunit /= self.localKmag
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
         
@@ -268,38 +268,48 @@ class FlowAnalysis:
         else:
             return None
 
+    def get_rotation_free_vec_field(vec):
+        """
+        returns the rotation free component of a 3D 3 component vector field
+        based on 2nd order finite central differences by solving
+        discrete La Place eqn div V = - div (grad phi)
+        """
 
-    def decompose_vector(self,vec):
+        # set up left side in Fourier space
+        div_vec = MPIdivX(self.comm, vec)
+
+        ft_div_vec = newDistArray(self.FFT, rank=0)
+        ft_div_vec = self.FFT.forward(div_vec, ft_div_vec)
+
+        # discrete fourier representation of -div grad based on consecutive
+        # 2nd order first derivatives
+        denom = -1/2. * res**2. * (np.cos(4.*np.pi*self.localK[0]/self.res) +
+                                   np.cos(4.*np.pi*self.localK[1]/self.res) +
+                                   np.cos(4.*np.pi*self.localK[2]/self.res) - 3.)
+
+        # these are 0 in the nominator anyway, so set this to 1 to avoid
+        # division by zero
+        denom[denom == 0.] = 1.
+
+        ft_div_vec /= denom
+        phi = newDistArray(self.FFT, False, rank=0)
+        phi = self.FFT.backward(ft_div_vec, phi).real
+
+        return - MPIgradX(phi)
+
+    def decompose_vector(self, vec):
         """ decomposed input vector into harmonic, rotational and compressive part
         """
         
         N = float(self.comm.allreduce(vec.size))
         total = self.comm.allreduce(np.sum(vec,axis=(1,2,3)))
         # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
-        Harm = total / (N/3)
-        
-        FT_vec = newDistArray(self.FFT,rank=1)
-        for i in range(3):
-            FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])
-        
-        # project components
-        localVecDotKunit = np.sum(FT_vec*localKunit,axis = 0)
+        harm = total / (N/3)
 
-        FT_Dil = localVecDotKunit * localKunit
-        
-        FT_Sol = FT_vec - FT_Dil
-        if self.rank == 0:
-            # remove harmonic part from solenoidal component
-            FT_Sol[:,0,0,0] = 0.
+        dil = get_rotation_free_vec_field(vec)
+        sol = vec - harm.reshape((3,1,1,1)) - dil
 
-        Dil = newDistArray(self.FFT,False,rank=1)
-        Sol = newDistArray(self.FFT,False,rank=1)
-
-        for i in range(3):
-            Dil[i] = self.FFT.backward(FT_Dil[i],Dil[i])
-            Sol[i] = self.FFT.backward(FT_Sol[i],Sol[i])
-
-        return Harm, Sol.real, Dil.real
+        return harm, sol, dil
 
 
     def scalar_power_spectrum(self,name,field):
@@ -348,9 +358,9 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/PowSpec/TotFull', (1,), dtype='f')[0] = totPowFull
 
         # project components
-        localVecDotKunit = np.sum(FT_vec*localKunit,axis = 0)
+        localVecDotKunit = np.sum(FT_vec*self.localKunit,axis = 0)
 
-        FT_Dil = localVecDotKunit * localKunit
+        FT_Dil = localVecDotKunit * self.localKunit
         FT_DilAbs2 = np.linalg.norm(FT_Dil,axis=0)**2.
         PS_Dil = self.normalized_spectrum(self.localKmag.reshape(-1),FT_DilAbs2.reshape(-1))
         
