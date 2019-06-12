@@ -205,7 +205,8 @@ if args['type'] == 'transfer':
 
 elif args['type'] == 'flow':
     
-    FlowAnalysis(MPI,args,fields)
+    FA = FlowAnalysis(MPI,args,fields)
+    FA.run_analysis()
     
 else:
     raise SystemExit('Unknown transfer type: ', args['type'])

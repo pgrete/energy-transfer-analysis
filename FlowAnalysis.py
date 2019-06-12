@@ -33,14 +33,19 @@ class FlowAnalysis:
         else:
             self.global_min_max = {}
 
-        rho = fields['rho']
-        U = fields['U']
-        B = fields['B']
-        Acc = fields['Acc']
-        P = fields['P']
+        self.rho = fields['rho']
+        self.U = fields['U']
+        self.B = fields['B']
+        self.Acc = fields['Acc']
+        self.P = fields['P']
+
+        self.eos = args['eos']
+        self.gamma = args['gamma']
+        self.has_b_fields = args['b']
+
 
         if self.rank == 0:
-            self.outfile = h5py.File(args['outfile'], "w")
+            self.outfile_path = args['outfile']
 
         # maximum integer wavenumber
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))
@@ -72,8 +77,18 @@ class FlowAnalysis:
         self.localKunit /= self.localKmag
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
+
+    def run_analysis(self):
         
+        rho = self.rho
+        U = self.U
+        B = self.B
+        Acc = self.Acc
+        P = self.P
         
+        if self.rank == 0:
+            self.outfile = h5py.File(self.outfile_path, "w")
+
         self.vector_power_spectrum('u',U)
         self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
@@ -113,8 +128,8 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
         self.get_and_write_statistics_to_file(np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0)),"AbsRotU")
 
-        if args['eos'] == 'adiabatic':
-            self.gamma = args['gamma']
+        if self.eos == 'adiabatic':
+            self.gamma = self.gamma
             if self.rank == 0:
                 print("Using gamma = %.3f for adiabatic EOS" % self.gamma)
             
@@ -138,7 +153,7 @@ class FlowAnalysis:
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
 
-        if not args['b']:
+        if not self.has_b_fields:
             if self.rank == 0:
                 self.outfile.close()
             return
@@ -149,14 +164,14 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(np.sqrt(B2),"B")
         self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity")
 
-        if args['eos'] == 'adiabatic':
+        if self.eos == 'adiabatic':
             TotPres = P + B2/2.
             corrPBcomp = self.get_corr_coeff(P,np.sqrt(B2)/rho**(2./3.))
             self.get_2d_hist('P-B',P,np.sqrt(B2))
             self.get_2d_hist('P-MagEnDensity',P,0.5 * B2)
             
             plasmaBeta = 2.* P / B2
-        elif args['eos'] == 'isothermal':
+        elif self.eos == 'isothermal':
             if self.rank == 0:
                 print('Warning: assuming c_s = 1 for isothermal EOS')
             TotPres = rho + B2/2.
@@ -164,7 +179,7 @@ class FlowAnalysis:
             
             plasmaBeta = 2.*rho/B2
         else:
-            raise SystemExit('Unknown EOS', args['eos'])
+            raise SystemExit('Unknown EOS', self.eos)
 
         self.get_and_write_statistics_to_file(TotPres,"TotPres")
         self.get_and_write_statistics_to_file(plasmaBeta,"plasmabeta")
@@ -214,7 +229,7 @@ class FlowAnalysis:
         if self.rank == 0:
             self.outfile.require_dataset('rho-B/corr', (1,), dtype='f')[0] = corrRhoB
 
-        if args['eos'] == 'adiabatic':
+        if self.eos == 'adiabatic':
             rhoToGamma = rho**self.gamma
             corrRhoToGammaB = self.get_corr_coeff(rhoToGamma,np.sqrt(B2))
             if self.rank == 0:
