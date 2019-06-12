@@ -26,7 +26,7 @@ parser.add_argument('--res',
 parser.add_argument('--type',
                     required=True,
                     type=str,
-                    choices=['transfer','flow'],
+                    choices=['transfer','flow','unit-test'],
                     help='set analysis type')
 
 parser.add_argument('--data_type',
@@ -41,8 +41,8 @@ parser.add_argument('--data_path',
                     help='set data location')
 
 parser.add_argument('--outfile',
-                    required=True,
                     type=str,
+                    default=None,
                     help='set file to store results')
 
 parser.add_argument('--extrema_file',
@@ -164,6 +164,8 @@ if args['type'] == 'transfer':
         raise SystemExit('Binning undetermined')
 
 
+if args['outfile'] is None and args['type'] != 'unit-test':
+    raise SystemExit('Outfile required for analysis.')
 
 outfile = args['outfile']
 resolution = args['res']
@@ -207,6 +209,11 @@ elif args['type'] == 'flow':
     
     FA = FlowAnalysis(MPI,args,fields)
     FA.run_analysis()
+
+elif args['type'] == 'unit-test':
     
+    FA = FlowAnalysis(MPI,args,fields)
+    FA.run_test()
+
 else:
     raise SystemExit('Unknown transfer type: ', args['type'])

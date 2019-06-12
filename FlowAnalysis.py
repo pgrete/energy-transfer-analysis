@@ -60,10 +60,10 @@ class FlowAnalysis:
         self.FFT = PFFT(self.comm, N, axes=(0,1,2), collapse=False,
                         slab=True, dtype=np.complex128)
 
-        localK = get_local_wavenumbermesh(self.FFT, L)
-        self.localKmag = np.linalg.norm(localK,axis=0)
+        self.localK = get_local_wavenumbermesh(self.FFT, L)
+        self.localKmag = np.linalg.norm(self.localK,axis=0)
 
-        self.localKunit = np.copy(localK)
+        self.localKunit = np.copy(self.localK)
         # fixing division by 0 for harmonic part
         if self.rank == 0:
             if self.localKmag[0,0,0] == 0.:
@@ -283,7 +283,7 @@ class FlowAnalysis:
         else:
             return None
 
-    def get_rotation_free_vec_field(vec):
+    def get_rotation_free_vec_field(self, vec):
         """
         returns the rotation free component of a 3D 3 component vector field
         based on 2nd order finite central differences by solving
@@ -298,9 +298,9 @@ class FlowAnalysis:
 
         # discrete fourier representation of -div grad based on consecutive
         # 2nd order first derivatives
-        denom = -1/2. * res**2. * (np.cos(4.*np.pi*self.localK[0]/self.res) +
-                                   np.cos(4.*np.pi*self.localK[1]/self.res) +
-                                   np.cos(4.*np.pi*self.localK[2]/self.res) - 3.)
+        denom = -1/2. * self.res**2. * (np.cos(4.*np.pi*self.localK[0]/self.res) +
+                                        np.cos(4.*np.pi*self.localK[1]/self.res) +
+                                        np.cos(4.*np.pi*self.localK[2]/self.res) - 3.)
 
         # these are 0 in the nominator anyway, so set this to 1 to avoid
         # division by zero
@@ -310,7 +310,7 @@ class FlowAnalysis:
         phi = newDistArray(self.FFT, False, rank=0)
         phi = self.FFT.backward(ft_div_vec, phi).real
 
-        return - MPIgradX(phi)
+        return - MPIgradX(self.comm, phi)
 
     def decompose_vector(self, vec):
         """ decomposed input vector into harmonic, rotational and compressive part
@@ -321,7 +321,7 @@ class FlowAnalysis:
         # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
         harm = total / (N/3)
 
-        dil = get_rotation_free_vec_field(vec)
+        dil = self.get_rotation_free_vec_field(vec)
         sol = vec - harm.reshape((3,1,1,1)) - dil
 
         return harm, sol, dil
@@ -527,4 +527,24 @@ class FlowAnalysis:
                 tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
                 tmp[:,:] = totalHist.astype(float)
 
+    def run_test(self):
+        """ simple tests (to be expanded and separated)
+        """
+        # using velocity field for no reason, but it's probably most likely to be avail
+        vec = self.U
+
+        # TESTING VECTOR DECOMPOSITION
+        vec_harm, vec_sol, vec_dil = self.decompose_vector(vec)
+        np.testing.assert_allclose(vec,
+                                   vec_harm.reshape((3,1,1,1)) + vec_sol + vec_dil,
+                                   err_msg="Mismatch bw/ decomposed and original vector.")
+
+        msg = "solenoidal part is not divergence free"
+        assert np.sum(np.abs(MPIdivX(self.comm, vec_sol)))/vec_sol.size/3 < 1e-13, msg
+        
+        msg = "compressive part is not rotation free"
+        assert np.sum(np.linalg.norm(MPIrotX(self.comm, vec_dil),axis=0))/vec_dil.size/3 < 1e-13, msg
+
+
+        
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4 ai
