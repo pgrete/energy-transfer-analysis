@@ -17,13 +17,17 @@ import numpy as np
 
 # from
 # https://bitbucket.org/mpi4py/mpi4py-fft/raw/67dfed980115108c76abb7e865860b5da98674f9/examples/spectral_dns_solver.py
+# with modification for complex numbers
 def get_local_wavenumbermesh(FFT, L):
     """Returns local wavenumber mesh."""
     s = FFT.local_slice()
     N = FFT.global_shape()
     # Set wavenumbers in grid
-    k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N[:-1]]
-    k.append(np.fft.rfftfreq(N[-1], 1./N[-1]).astype(int))
+    if FFT.dtype() == np.complex128:
+        k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N]
+    else:
+        k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N[:-1]]
+        k.append(np.fft.rfftfreq(N[-1], 1./N[-1]).astype(int))
     K = [ki[si] for ki, si in zip(k, s)]
     Ks = np.meshgrid(*K, indexing='ij', sparse=True)
     Lp = 2*np.pi/L

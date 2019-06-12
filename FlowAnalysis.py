@@ -53,7 +53,7 @@ class FlowAnalysis:
         # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
         L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
         self.FFT = PFFT(self.comm, N, axes=(0,1,2), collapse=False,
-                        slab=True, dtype=np.float64)
+                        slab=True, dtype=np.complex128)
 
         localK = get_local_wavenumbermesh(self.FFT, L)
         self.localKmag = np.linalg.norm(localK,axis=0)
@@ -98,16 +98,16 @@ class FlowAnalysis:
             if self.rank == 0:
                 self.outfile.require_dataset('U-A/corr', (1,), dtype='f')[0] = corrUA
             
-#            UHarm, USol, UDil = self.decompose_vector(U)
-#            self.get_and_write_statistics_to_file(
-#                np.sum(Acc*U,axis=0)/(
-#                    np.linalg.norm(Acc,axis=0)*np.linalg.norm(U,axis=0)),"Angle_u_a")
-#            self.get_and_write_statistics_to_file(
-#                np.sum(Acc*USol,axis=0)/(
-#                    np.linalg.norm(Acc,axis=0)*np.linalg.norm(USol,axis=0)),"Angle_uSol_a")
-#            self.get_and_write_statistics_to_file(
-#                np.sum(Acc*UDil,axis=0)/(
-#                    np.linalg.norm(Acc,axis=0)*np.linalg.norm(UDil,axis=0)),"Angle_uDil_a")
+            UHarm, USol, UDil = self.decompose_vector(U)
+            self.get_and_write_statistics_to_file(
+                np.sum(Acc*U,axis=0)/(
+                    np.linalg.norm(Acc,axis=0)*np.linalg.norm(U,axis=0)),"Angle_u_a")
+            self.get_and_write_statistics_to_file(
+                np.sum(Acc*USol,axis=0)/(
+                    np.linalg.norm(Acc,axis=0)*np.linalg.norm(USol,axis=0)),"Angle_uSol_a")
+            self.get_and_write_statistics_to_file(
+                np.sum(Acc*UDil,axis=0)/(
+                    np.linalg.norm(Acc,axis=0)*np.linalg.norm(UDil,axis=0)),"Angle_uDil_a")
 
         DivU = MPIdivX(self.comm,U)
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
@@ -346,11 +346,6 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
             self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
             self.outfile.require_dataset(name + '/PowSpec/TotFull', (1,), dtype='f')[0] = totPowFull
-
-        return
-        
-        raise SystemError('This results in incorrect total powers for real->complex transforms. ' +
-                          'Either update to complex->complex or introduce proper weighting.')
 
         # project components
         localVecDotKunit = np.sum(FT_vec*localKunit,axis = 0)
