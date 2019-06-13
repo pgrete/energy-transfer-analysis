@@ -92,6 +92,14 @@ class FlowAnalysis:
         self.vector_power_spectrum('u',U)
         self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
+        
+        vec_harm, vec_sol, vec_dil = self.decompose_vector(U)
+        self.vector_power_spectrum('u_s',vec_sol)
+        self.vector_power_spectrum('u_c',vec_dil)
+        self.vector_power_spectrum('rhou_s',np.sqrt(rho)*vec_sol)
+        self.vector_power_spectrum('rhou_c',np.sqrt(rho)*vec_dil)
+        del vec_harm, vec_sol, vec_dil
+        
 
         self.get_and_write_statistics_to_file(rho,"rho")
         self.get_and_write_statistics_to_file(np.log(rho),"lnrho")
