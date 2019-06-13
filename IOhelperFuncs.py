@@ -49,6 +49,24 @@ def read_fields(args):
         fields  = readAllFieldsWithYT(args['data_path'], args['res'],
                                       rhoField, velFields, magFields,
                                       accFields, pressField)
+    
+    elif args['data_type'] == 'AthenaHDFC':
+        rhoField = 'density'
+        velFields = ['velocity_x', 'velocity_y', 'velocity_z']
+        if args['b']:
+            magFields = ['cell_centered_B_x', 'cell_centered_B_y', 'cell_centered_B_z']
+        if args['forced']:
+            accFields = ['acceleration_x', 'acceleration_y', 'acceleration_z']
+
+        if args['eos'] == 'adiabatic':
+            pressField = 'pressure'
+
+        order = 'C'
+
+
+        fields  = readAllFieldsWithHDF(args['data_path'], args['res'],
+                                       rhoField, velFields, magFields,
+                                       accFields, pressField,order)
 
     else:
         raise SystemExit('Unknown data type: ', data_type)
@@ -257,5 +275,11 @@ def readAllFieldsWithHDF(loadPath,Res,
             print("WARNING: remember assuming isothermal EOS with c_s = 1, i.e. P = rho")
         P = rho
         
-    return rho, U, B, Acc, P
+    return {
+        'rho' : rho, 
+        'U'   : U, 
+        'B'   : B,
+        'Acc' : Acc,
+        'P'   : P
+    }
 
