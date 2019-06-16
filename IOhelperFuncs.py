@@ -8,6 +8,87 @@ comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
+def read_fields(args):
+    """
+    Read all fields of a simulation snapshot
+
+    args : forwarded command line arguments from the main script
+    """
+    # data dictionary
+    fields = {}
+    pressField = None
+    magFields = None
+    accFields = None
+    
+
+    if args['data_type'] == 'Enzo':
+        rhoField = "Density"
+        velFields = ["x-velocity","y-velocity","z-velocity"]
+        if args['b']:
+            magFields = ["Bx","By","Bz"]
+        if args['forced']:
+            accFields = ['x-acceleration','y-acceleration','z-acceleration']
+
+        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
+                                      rhoField, velFields, magFields,
+                                      accFields, pressField)
+
+    elif args['data_type'] == 'AthenaPP':
+        rhoField = ('athena_pp', 'rho')
+        velFields = [('athena_pp', 'vel1'), ('athena_pp', 'vel2'), ('athena_pp', 'vel3')]
+        if args['b']:
+            magFields = [('athena_pp', 'Bcc1'), ('athena_pp', 'Bcc2'), ('athena_pp', 'Bcc3')]
+        if args['forced']:
+            raise SystemExit('Need to define focing fields for AthenaPP')
+            #accFields = ['x-acceleration','y-acceleration','z-acceleration']
+
+        if args['eos'] == 'adiabatic':
+            pressField = ('athena_pp', 'press')
+
+
+        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
+                                      rhoField, velFields, magFields,
+                                      accFields, pressField)
+    
+    elif args['data_type'] == 'AthenaHDFC':
+        rhoField = 'density'
+        velFields = ['velocity_x', 'velocity_y', 'velocity_z']
+        if args['b']:
+            magFields = ['cell_centered_B_x', 'cell_centered_B_y', 'cell_centered_B_z']
+        if args['forced']:
+            accFields = ['acceleration_x', 'acceleration_y', 'acceleration_z']
+
+        if args['eos'] == 'adiabatic':
+            pressField = 'pressure'
+
+        order = 'C'
+
+        fields  = readAllFieldsWithHDF(args['data_path'], args['res'],
+                                       rhoField, velFields, magFields,
+                                       accFields, pressField,order)
+
+    elif args['data_type'] == 'Athena':
+        rhoField = 'density'
+        velFields = ['velocity_x', 'velocity_y', 'velocity_z']
+        if args['b']:
+            magFields = ['cell_centered_B_x', 'cell_centered_B_y', 'cell_centered_B_z']
+        if args['forced']:
+            accFields = ['acceleration_x', 'acceleration_y', 'acceleration_z']
+
+        if args['eos'] == 'adiabatic':
+            pressField = 'pressure'
+
+        order = 'C'
+
+        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
+                                      rhoField, velFields, magFields,
+                                      accFields, pressField)
+
+    else:
+        raise SystemExit('Unknown data type: ', data_type)
+
+    return fields
+
 def readAllFieldsWithYT(loadPath,Res,
     rhoField,velFields,magFields,accFields,pressField=None):
     """
@@ -16,23 +97,28 @@ def readAllFieldsWithYT(loadPath,Res,
     """
 	
     if Res % size != 0:
-        print("Data cannot be split evenly among processes. Abort (for now) - fix me!")
-        sys.exit(1)
+        raise SystemExit(
+            'Data cannot be split evenly among processes. ' +
+            'Abort (for now) - fix me!')
         
     FinalShape = (Res//size,Res,Res)   
     
     ds = yt.load(loadPath)
     dims = ds.domain_dimensions
+    left_edge = ds.domain_left_edge
+    right_edge = ds.domain_right_edge
+
     dims[0] /= size
 
-    startPos = rank * 1./np.float(size)
+    start_pos = left_edge
+    start_pos[0] += rank * (right_edge[0] - left_edge[0])/np.float(size)
     if rank == 0:
         print("Loading "+ loadPath)
         print("Chunk dimensions = ", FinalShape)
         print("WARNING: remember assuming domain of L = 1")
     
 
-    ad = ds.h.covering_grid(level=0, left_edge=[startPos,0.0,0.0],dims=dims)
+    ad = ds.h.covering_grid(level=0, left_edge=start_pos,dims=dims)
     
     if rhoField is not None:
         rho = ad[rhoField].d
@@ -70,7 +156,13 @@ def readAllFieldsWithYT(loadPath,Res,
     else:
         Acc = None
         
-    return rho, U, B, Acc, P
+    return {
+        'rho' : rho, 
+        'U'   : U, 
+        'B'   : B,
+        'Acc' : Acc,
+        'P'   : P
+    }
 
 # mmet by https://gist.github.com/rossant/7b4704e8caeb8f173084
 def _mmap_h5(path, h5path):
@@ -199,5 +291,11 @@ def readAllFieldsWithHDF(loadPath,Res,
             print("WARNING: remember assuming isothermal EOS with c_s = 1, i.e. P = rho")
         P = rho
         
-    return rho, U, B, Acc, P
+    return {
+        'rho' : rho, 
+        'U'   : U, 
+        'B'   : B,
+        'Acc' : Acc,
+        'P'   : P
+    }
 
