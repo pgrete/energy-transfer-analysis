@@ -46,9 +46,8 @@ class FlowAnalysis:
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
         
-        self.kernel = args['kernel']  # MAYBE???
-        self.delta = args['delta']
-
+        self.kernel = args['kernel']  # Added
+        
         if self.rank == 0:
             self.outfile_path = args['outfile']
 
@@ -85,7 +84,7 @@ class FlowAnalysis:
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
 
-    def Kernel(self,KERNEL,DELTA,factor=None):
+    def Kernel(self,DELTA,factor=None):
     # This function creates G^hat_l (the convolution kernel for a particular filtering scale)
         """generate filter kernels
         KERNEL - type of kernel to be used   # Need to read this in as an argument?
@@ -94,6 +93,7 @@ class FlowAnalysis:
         factor - (optional) multiplicative factor of the filter width
                                             """                                        
         # k = self.k_bins # array of wavenumbers 
+        KERNEL=self.kernel
         pi=np.pi
         if factor is None:
             factor = 1 
@@ -306,9 +306,39 @@ class FlowAnalysis:
 
         if self.rank == 0:
             self.outfile.close()
-            
+        
+        #########################
+        # Method B: equation 33 #
+        #########################
 
+        # Set up array of filter sizes
+        delta_x = 1/self.res
+        m = np.linspace(1, self.res/2, 1)
+        k_lm = lm = np.zeros(int(self.res/2)-1)
+        lm[:] = np.array(2*m[:]*delta_x)
+        k_lm[:] = 1/l_m[:]
 
+        # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
+        epsilon = all_filtered_momenta = all_filtered_rho = np.zeros(len(k_lm))
+        momentum = self.rho * self.U
+        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)  # These are used as both inputs and outputs in various lines. So is "output=TRUE" (the default) truly correct?
+        self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1) # or should it be np.zeros(len(momentum))?
+        
+        # I based this section on line 150 of EnergyTransfer.py. Other versions (141) iterate over 3 dimensions (I assume they're dimensions?) but I don't think that applies to us
+        self.FT_momentum = self.FFT.forward(momentum, self.FT_momentum)
+        self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
+
+        # Calculate the cumulative spectrum (epsilon) for each filter length scale
+        for i, filter in enumerate(k_lm):
+            FT_G = Kernel(filter)  # Fourier transform of the convolution kernel    
+            all_filtered_momenta[i] = self.FFT.backward(FT_G * FT_momentum, self.momentum_filtered)            
+            all_filtered_momenta[i] = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
+            epsilon[i] = 0.5 * abs(self.momentum_filtered**2) / abs(self.rho_filtered) # What do < > mean in equation 27?
+
+        # Calculate the energy spectrum for each filter length scale (use equation 33)
+        TotEnergy = np.zeros(len(k_lm)-1)
+        for i in range(len(k_lm) - 1):
+            TotEnergy[i] = epsilon[i+1] - epsilon[i]
 
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
