@@ -94,7 +94,7 @@ parser.add_argument('--binning',
                     choices=['log', 'lin', 'test'],
                     help='set binning used in energy transfer analysis')
 
-# MAYBE???
+# Added
 parser.add_argument('--kernel',
 		    default=None,
 		    type=str,

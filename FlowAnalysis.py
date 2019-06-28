@@ -313,7 +313,7 @@ class FlowAnalysis:
 
         # Set up array of filter sizes
         delta_x = 1/self.res
-        m = np.linspace(1, self.res/2, 1)
+        m = np.arange(1, self.res/2, 1)
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/l_m[:]
@@ -321,11 +321,13 @@ class FlowAnalysis:
         # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
         epsilon = all_filtered_momenta = all_filtered_rho = np.zeros(len(k_lm))
         momentum = self.rho * self.U
-        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)  # These are used as both inputs and outputs in various lines. So is "output=TRUE" (the default) truly correct?
-        self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1) # or should it be np.zeros(len(momentum))?
-        
-        # I based this section on line 150 of EnergyTransfer.py. Other versions (141) iterate over 3 dimensions (I assume they're dimensions?) but I don't think that applies to us
-        self.FT_momentum = self.FFT.forward(momentum, self.FT_momentum)
+        print(momentum.shape)
+        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1) 
+        self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1) 
+
+        # I based this section on line 150 of EnergyTransfer.py. Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
+        for i in range(3):
+            self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
         self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
 
         # Calculate the cumulative spectrum (epsilon) for each filter length scale
@@ -339,6 +341,8 @@ class FlowAnalysis:
         TotEnergy = np.zeros(len(k_lm)-1)
         for i in range(len(k_lm) - 1):
             TotEnergy[i] = epsilon[i+1] - epsilon[i]
+            
+        # Still need to output this spectrum somehow... see line 467 (?)
 
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
