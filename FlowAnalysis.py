@@ -92,6 +92,8 @@ class FlowAnalysis:
         DELTA  - filter width (in grid cells)   # This is 'l', the filtering scale (aka spatial cutoff length)
         factor - (optional) multiplicative factor of the filter width
                                             """                                        
+        print("In Kernel()")
+
         # k = self.k_bins # array of wavenumbers 
         KERNEL=self.kernel
         pi=np.pi
@@ -105,16 +107,16 @@ class FlowAnalysis:
             for i in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):   # These are all the same
                 for j in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):    # Fill in the 3D box
                     for k in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):
-                    localFac = 1.   # Every localFac gets set to 1
-                    # Changed to 0.5 if this condition is met (magnitude of step is 1/2 filter width times factor)
-                    if np.abs(i) == factor*np.int(DELTA)/2: 
-                        localFac *= 0.5     # What is this localFac?
-                    if np.abs(j) == factor*np.int(DELTA)/2:
-                        localFac *= 0.5                    
-                    if np.abs(k) == factor*np.int(DELTA)/2:
-                        localFac *= 0.5 
+                        localFac = 1.   # Every localFac gets set to 1
+                        # Changed to 0.5 if this condition is met (magnitude of step is 1/2 filter width times factor)
+                        if np.abs(i) == factor*np.int(DELTA)/2: 
+                            localFac *= 0.5     # What is this localFac?
+                        if np.abs(j) == factor*np.int(DELTA)/2:
+                            localFac *= 0.5                    
+                        if np.abs(k) == factor*np.int(DELTA)/2:
+                            localFac *= 0.5 
                     
-                    localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
+            localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
             return fftn(localKern)   # Appears to be using a Fast Fourier Transform? What is this `function fftn()`?
             # Returns the localKern in spectral space
             # Then what does it do with it?
@@ -133,7 +135,8 @@ class FlowAnalysis:
             sys.exit("Unknown kernel used")                                                                                                                                                                                                         
     def run_analysis(self):  # This looks like the actual running analysis part!
         
-        self.k_bins *= Kernel(self.kernel, self.delta)  # MAYBE???
+        print("In run_analysis")
+
         rho = self.rho
         U = self.U
         B = self.B
@@ -166,7 +169,11 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")  # KinEn
         self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")  # What is KE specific
 
+        print("Finished KinEnSpecific")
+
         if Acc is not None:
+            print("In Acc is not None")
+
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
             self.get_and_write_statistics_to_file(Amag,"a")
             self.vector_power_spectrum('a',Acc)
@@ -189,6 +196,8 @@ class FlowAnalysis:
         DivU = MPIdivX(self.comm,U)
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
         self.get_and_write_statistics_to_file(np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0)),"AbsRotU")
+
+        print("Just wrote statistics for AbsRotU")
 
         if self.eos == 'adiabatic':
             self.gamma = self.gamma
@@ -214,8 +223,66 @@ class FlowAnalysis:
 
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
+        #########################
+        # Method B: equation 33 #
+        #########################
+        
+        print("In Method B")
+
+        # Set up array of filter sizes
+        delta_x = 1/self.res
+        m = np.linspace(1, self.res/2, 1)
+        k_lm = lm = np.zeros(int(self.res/2)-1)
+        lm[:] = np.array(2*m[:]*delta_x)
+        k_lm[:] = 1/lm[:]
+        print("Before m shape")
+        print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
+
+        # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
+        print("Between m shape and momentum")
+        epsilon = all_filtered_momenta = all_filtered_rho = np.zeros(len(k_lm))
+        momentum = self.rho * self.U
+        print("Momentum is: ", momentum)
+        print("Momentum shape is: ", momentum.shape)
+        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)  
+        self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1)
+        
+        # I based this section on line 150 of EnergyTransfer.py. Other versions (141) iterate over 3 dimensions (I assume they're dimensions?) but I don't think that applies to us
+        print("About to perform FFT")
+        self.FT_momentum = self.FFT.forward(momentum, self.FT_momentum)
+        self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
+        
+        N = float(self.comm.allreduce(epsilon.size)) # This should be same as k_lm.size?
+        print("N is: ", N)
+
+        # Calculate the cumulative spectrum (epsilon) for each filter length scale
+        for i, filter in enumerate(k_lm):
+            FT_G = Kernel(filter)  # Fourier transform of the convolution kernel   # Do we even need this?   
+            # all_filtered_momenta[i] = self.FFT.backward(FT_G * FT_momentum, self.momentum_filtered)            
+            # all_filtered_momenta[i] = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
+            mean = self.comm.allreduce(np.sum(abs(self.momentum_filtered**2) / abs(self.rho_filtered))) / N  # Not sure this is right?
+            epsilon[i] = 0.5 * mean 
+            print("Epsilon ", i, ": ", epsilon[i])
+        
+        mean = self.comm.allreduce(np.sum(epsilon)) / N
+
+        # Calculate the energy spectrum for each filter length scale (use equation 33)
+        TotEnergy = np.zeros(len(k_lm)-1)
+        for i in range(len(k_lm) - 1):
+            TotEnergy[i] = epsilon[i+1] - epsilon[i]
+            print("Total energy at position ", i, " is: ", TotEnergy[i])
+            
+        # Still need to output this spectrum somehow... see line 467 (?)
+        # In line 492, they use self.k_bins and totPowFull
+        # For me, everything is based off of k_lm
+        # But I probably still want it to print to power spectrum over k_bins... right?
+        if self.rank == 0:
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = k_lm
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (4,len(k_lm)-1), dtype='f')[:,:] = TotEnergy  # What does this function return? 
+        print("Finished Method B", file=sys.stderr)
 
         if not self.has_b_fields:  # We don't have b fields... is this where we close?
+            print("In not self.has_b_fields")
             if self.rank == 0:
                 self.outfile.close()
             return
@@ -306,43 +373,6 @@ class FlowAnalysis:
 
         if self.rank == 0:
             self.outfile.close()
-        
-        #########################
-        # Method B: equation 33 #
-        #########################
-
-        # Set up array of filter sizes
-        delta_x = 1/self.res
-        m = np.arange(1, self.res/2, 1)
-        k_lm = lm = np.zeros(int(self.res/2)-1)
-        lm[:] = np.array(2*m[:]*delta_x)
-        k_lm[:] = 1/l_m[:]
-
-        # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
-        epsilon = all_filtered_momenta = all_filtered_rho = np.zeros(len(k_lm))
-        momentum = self.rho * self.U
-        print(momentum.shape)
-        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1) 
-        self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1) 
-
-        # I based this section on line 150 of EnergyTransfer.py. Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
-        for i in range(3):
-            self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
-        self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
-
-        # Calculate the cumulative spectrum (epsilon) for each filter length scale
-        for i, filter in enumerate(k_lm):
-            FT_G = Kernel(filter)  # Fourier transform of the convolution kernel    
-            all_filtered_momenta[i] = self.FFT.backward(FT_G * FT_momentum, self.momentum_filtered)            
-            all_filtered_momenta[i] = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
-            epsilon[i] = 0.5 * abs(self.momentum_filtered**2) / abs(self.rho_filtered) # What do < > mean in equation 27?
-
-        # Calculate the energy spectrum for each filter length scale (use equation 33)
-        TotEnergy = np.zeros(len(k_lm)-1)
-        for i in range(len(k_lm) - 1):
-            TotEnergy[i] = epsilon[i+1] - epsilon[i]
-            
-        # Still need to output this spectrum somehow... see line 467 (?)
 
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
@@ -369,6 +399,13 @@ class FlowAnalysis:
 
 
             # calculate corresponding k to to bin
+            # this help to overcome statistics for low k bins
+            centeredK = totalKSum / totalHistCount
+
+            ###  "integrate" over k-shells
+            # normalized by mean shell surface
+            valsShell = 4. * np.pi * centeredK**2. * (totalHistSum / totalHistCount)
+            # normalized by mean shell volume
             # this help to overcome statistics for low k bins
             centeredK = totalKSum / totalHistCount
 
@@ -607,13 +644,6 @@ class FlowAnalysis:
         if self.rank == 0:
             tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
             tmp[0] = XBins
-            tmp[1] = YBins
-            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
-            tmp[:,:] = totalHist.astype(float)
-        
-        Xname, Yname = name.split('-')
-        if Xname in self.global_min_max.keys() and Yname in self.global_min_max.keys():
-            XBins = np.linspace(self.global_min_max[Xname][0],self.global_min_max[Xname][1],129)
             HistBins = 'globalMinMax'
 
             if self.rank == 0:
