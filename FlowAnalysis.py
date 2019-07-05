@@ -83,56 +83,7 @@ class FlowAnalysis:
         self.localKunit /= self.localKmag
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
-
-    def Kernel(self,DELTA,factor=None):
-    # This function creates G^hat_l (the convolution kernel for a particular filtering scale)
-        """generate filter kernels
-        KERNEL - type of kernel to be used   # Need to read this in as an argument?
-        RES    - linear numerical resolution    # Replaced with self.res
-        DELTA  - filter width (in grid cells)   # This is 'l', the filtering scale (aka spatial cutoff length)
-        factor - (optional) multiplicative factor of the filter width
-                                            """                                        
-        print("In Kernel()")
-
-        # k = self.k_bins # array of wavenumbers 
-        KERNEL=self.kernel
-        pi=np.pi
-        if factor is None:
-            factor = 1 
-        else:
-            factor = np.int(factor)
-        
-        if KERNEL == "KernelBox":   # Box or top hat filter
-            localKern = np.zeros((self.res,self.res,self.res))  # Create a cube with dimensions of resolution (initialize with zeros)
-            for i in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):   # These are all the same
-                for j in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):    # Fill in the 3D box
-                    for k in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):
-                        localFac = 1.   # Every localFac gets set to 1
-                        # Changed to 0.5 if this condition is met (magnitude of step is 1/2 filter width times factor)
-                        if np.abs(i) == factor*np.int(DELTA)/2: 
-                            localFac *= 0.5     # What is this localFac?
-                        if np.abs(j) == factor*np.int(DELTA)/2:
-                            localFac *= 0.5                    
-                        if np.abs(k) == factor*np.int(DELTA)/2:
-                            localFac *= 0.5 
-                    
-            localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
-            return fftn(localKern)   # Appears to be using a Fast Fourier Transform? What is this `function fftn()`?
-            # Returns the localKern in spectral space
-            # Then what does it do with it?
-            # Never deals with cutoff wave number... weird?
-            
-        elif KERNEL == "KernelSharp":
-            localKern = np.ones_like(self.k_bins)   # Set all kernels equal to 1 to start
-            localKern[self.k_bins > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
-            # Looks very different from eq. 2.44 and 2.45
-            return localKern
-            # Returns localKern in real space
-        elif KERNEL == "KernelGauss":   # Gaussian filter
-            return np.exp(-(pi * factor * DELTA/self.res * self.k_bins)**2. /6.)  # Looks different from eq. 2.43
-            
-        else:
-            sys.exit("Unknown kernel used")                                                                                                                                                                                                         
+    
     def run_analysis(self):  # This looks like the actual running analysis part!
         
         print("In run_analysis")
@@ -228,6 +179,9 @@ class FlowAnalysis:
         #########################
         
         print("In Method B")
+        
+        import pdb
+        pdb.set_trace()
 
         # Set up array of filter sizes
         delta_x = 1/self.res
@@ -235,34 +189,46 @@ class FlowAnalysis:
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
-        print("Before m shape")
-        print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
+        # print("Before m shape")
+        # print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
 
         # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
-        print("Between m shape and momentum")
-        epsilon = all_filtered_momenta = all_filtered_rho = np.zeros(len(k_lm))
-        momentum = self.rho * self.U
-        print("Momentum is: ", momentum)
-        print("Momentum shape is: ", momentum.shape)
-        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)  
+        # print("Between m shape and momentum")
+        epsilon = all_filtered_momenta = all_filtered_rho = mean = np.zeros(len(k_lm))
+        momentum = rho * U
+        # print("Momentum is: ", momentum)
+        # print("Momentum shape is: ", momentum.shape)
+        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)
+        print("FT_momentum shape: ", self.FT_momentum.shape, "\nFT_rho shape: ", self.FT_rho.shape)
         self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1)
         
-        # I based this section on line 150 of EnergyTransfer.py. Other versions (141) iterate over 3 dimensions (I assume they're dimensions?) but I don't think that applies to us
+        # I based this section on line 150 of EnergyTransfer.py. Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
         print("About to perform FFT")
-        self.FT_momentum = self.FFT.forward(momentum, self.FT_momentum)
-        self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
-        
+        for i in range(3):
+            self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
+            print("FT_momentum[", i, "]: ", self.FT_momentum[i]
+ 
+        #FT_rho = self.FFT.forward(self.rho, self.FT_rho)
+        self.FT_rho = self.FFT.forward(rho, self.FT_rho)
+        print("FT_rho: ", self.FT_rho)
+
         N = float(self.comm.allreduce(epsilon.size)) # This should be same as k_lm.size?
-        print("N is: ", N)
+        # print("N is: ", N)
 
         # Calculate the cumulative spectrum (epsilon) for each filter length scale
         for i, filter in enumerate(k_lm):
-            FT_G = Kernel(filter)  # Fourier transform of the convolution kernel   # Do we even need this?   
-            # all_filtered_momenta[i] = self.FFT.backward(FT_G * FT_momentum, self.momentum_filtered)            
-            # all_filtered_momenta[i] = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
-            mean = self.comm.allreduce(np.sum(abs(self.momentum_filtered**2) / abs(self.rho_filtered))) / N  # Not sure this is right?
+            FT_G = self.Kernel(filter)  # Fourier transform of the convolution kernel   # Do we even need this?   
+            for j in range(3):    
+                self.momentum_filtered[j] = self.FFT.backward(FT_G * FT_momentum[j], self.momentum_filtered[j])            
+            self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
+            # print("Momentum filtered squared: ", self.momentum_filtered**2)
+            # print("Rho filtered: ", self.rho_filtered)
+            
+            for k in range(3):
+                mean[k] = self.comm.allreduce(np.sum(abs(self.momentum_filtered[k]**2) / abs(self.rho_filtered))) / N  # Not sure this is right?
+            print("Mean is: ", mean)
             epsilon[i] = 0.5 * mean 
-            print("Epsilon ", i, ": ", epsilon[i])
+            # print("Epsilon ", i, ": ", epsilon[i])
         
         mean = self.comm.allreduce(np.sum(epsilon)) / N
 
@@ -270,7 +236,7 @@ class FlowAnalysis:
         TotEnergy = np.zeros(len(k_lm)-1)
         for i in range(len(k_lm) - 1):
             TotEnergy[i] = epsilon[i+1] - epsilon[i]
-            print("Total energy at position ", i, " is: ", TotEnergy[i])
+            # print("Total energy at position ", i, " is: ", TotEnergy[i])
             
         # Still need to output this spectrum somehow... see line 467 (?)
         # In line 492, they use self.k_bins and totPowFull
@@ -373,6 +339,56 @@ class FlowAnalysis:
 
         if self.rank == 0:
             self.outfile.close()
+
+    def Kernel(self,DELTA,factor=None):
+    # This function creates G^hat_l (the convolution kernel for a particular filtering scale)
+        """generate filter kernels
+        KERNEL - type of kernel to be used   # Need to read this in as an argument?
+        RES    - linear numerical resolution    # Replaced with self.res
+        DELTA  - filter width (in grid cells)   # This is 'l', the filtering scale (aka spatial cutoff length)
+        factor - (optional) multiplicative factor of the filter width
+                                            """                                        
+        print("In Kernel()")
+
+        # k = self.k_bins # array of wavenumbers 
+        KERNEL=self.kernel
+        pi=np.pi
+        if factor is None:
+            factor = 1 
+        else:
+            factor = np.int(factor)
+        
+        if KERNEL == "KernelBox":   # Box or top hat filter
+            localKern = np.zeros((self.res,self.res,self.res))  # Create a cube with dimensions of resolution (initialize with zeros)
+            for i in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):   # These are all the same
+                for j in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):    # Fill in the 3D box
+                    for k in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):
+                        localFac = 1.   # Every localFac gets set to 1
+                        # Changed to 0.5 if this condition is met (magnitude of step is 1/2 filter width times factor)
+                        if np.abs(i) == factor*np.int(DELTA)/2: 
+                            localFac *= 0.5     # What is this localFac?
+                        if np.abs(j) == factor*np.int(DELTA)/2:
+                            localFac *= 0.5                    
+                        if np.abs(k) == factor*np.int(DELTA)/2:
+                            localFac *= 0.5 
+                    
+            localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
+            return fftn(localKern)   # Appears to be using a Fast Fourier Transform? What is this `function fftn()`?
+            # Returns the localKern in spectral space
+            # Then what does it do with it?
+            # Never deals with cutoff wave number... weird?
+            
+        elif KERNEL == "KernelSharp":
+            localKern = np.ones_like(self.k_bins)   # Set all kernels equal to 1 to start
+            localKern[self.k_bins > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
+            # Looks very different from eq. 2.44 and 2.45
+            return localKern
+            # Returns localKern in real space
+        elif KERNEL == "KernelGauss":   # Gaussian filter
+            return np.exp(-(pi * factor * DELTA/self.res * self.k_bins)**2. /6.)  # Looks different from eq. 2.43
+            
+        else:
+            sys.exit("Unknown kernel used")                                                                                                                                                                                                         
 
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
