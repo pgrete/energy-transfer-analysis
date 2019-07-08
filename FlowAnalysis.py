@@ -117,7 +117,7 @@ class FlowAnalysis:
         V2 = np.sum(U**2.,axis=0)   # That looks like Kinetic Energy (basically)
         self.get_and_write_statistics_to_file(np.sqrt(V2),"u")  # That looks like velocity
 
-        self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")  # KinEn
+        self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")  # KinEn # Does this do this for each rho?
         self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")  # What is KE specific
 
         print("Finished KinEnSpecific")
@@ -190,23 +190,29 @@ class FlowAnalysis:
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
         # print("Before m shape")
-        # print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
+        print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
 
         # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
         # print("Between m shape and momentum")
         epsilon = all_filtered_momenta = all_filtered_rho = mean = np.zeros(len(k_lm))
         momentum = rho * U
         # print("Momentum is: ", momentum)
-        # print("Momentum shape is: ", momentum.shape)
+        print("Momentum shape is: ", momentum.shape)
         self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)
         print("FT_momentum shape: ", self.FT_momentum.shape, "\nFT_rho shape: ", self.FT_rho.shape)
         self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1)
         
+        # Check ranks
+        my_rank = self.comm.Get_rank()
+        my_size = self.comm.Get_size()
+        print("Hello! I'm rank %d from %d running in total..." % (my_rank, my_size) )
+
         # I based this section on line 150 of EnergyTransfer.py. Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
         print("About to perform FFT")
         for i in range(3):
+            print("In FT_momentum for loop ", i)
             self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
-            print("FT_momentum[", i, "]: ", self.FT_momentum[i]
+            print("FT_momentum[", i, "]: ", self.FT_momentum[i])
  
         #FT_rho = self.FFT.forward(self.rho, self.FT_rho)
         self.FT_rho = self.FFT.forward(rho, self.FT_rho)
@@ -217,14 +223,17 @@ class FlowAnalysis:
 
         # Calculate the cumulative spectrum (epsilon) for each filter length scale
         for i, filter in enumerate(k_lm):
+            print("In cumulative spectrum loop for filter length scale ", i)
             FT_G = self.Kernel(filter)  # Fourier transform of the convolution kernel   # Do we even need this?   
             for j in range(3):    
+                print("In momentum_filtered for loop ", j)
                 self.momentum_filtered[j] = self.FFT.backward(FT_G * FT_momentum[j], self.momentum_filtered[j])            
             self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
             # print("Momentum filtered squared: ", self.momentum_filtered**2)
             # print("Rho filtered: ", self.rho_filtered)
             
             for k in range(3):
+                print("In mean of filtered momentum loop ", k)
                 mean[k] = self.comm.allreduce(np.sum(abs(self.momentum_filtered[k]**2) / abs(self.rho_filtered))) / N  # Not sure this is right?
             print("Mean is: ", mean)
             epsilon[i] = 0.5 * mean 
@@ -235,6 +244,7 @@ class FlowAnalysis:
         # Calculate the energy spectrum for each filter length scale (use equation 33)
         TotEnergy = np.zeros(len(k_lm)-1)
         for i in range(len(k_lm) - 1):
+            print("In TotEnergy loop for filter length scale ", i)
             TotEnergy[i] = epsilon[i+1] - epsilon[i]
             # print("Total energy at position ", i, " is: ", TotEnergy[i])
             
@@ -243,6 +253,7 @@ class FlowAnalysis:
         # For me, everything is based off of k_lm
         # But I probably still want it to print to power spectrum over k_bins... right?
         if self.rank == 0:
+            print("Printing outfiles")
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = k_lm
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (4,len(k_lm)-1), dtype='f')[:,:] = TotEnergy  # What does this function return? 
         print("Finished Method B", file=sys.stderr)
@@ -252,7 +263,6 @@ class FlowAnalysis:
             if self.rank == 0:
                 self.outfile.close()
             return
-
 
         B2 = np.sum(B**2.,axis=0)  # Eyy it's some magnetic pressure! (or magnetic energy? idk...)
 
