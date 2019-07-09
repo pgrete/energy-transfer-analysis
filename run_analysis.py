@@ -7,6 +7,9 @@ import os
 import sys
 import pickle
 
+# Aurora Cossairt's comments
+# accompany the command: srun -n 8 --mem-per-cpu=10G python ~/src/energy-transfer-analysis/run_analysis.py --res 256 --data_path /mnt/research/compastro-REU/cossairt_simulation/a-1.00/id0/Turb.0010.vtk  --data_type Athena --type flow --eos isothermal -forced --outfile /mnt/research/compastro-REU/cossairt_simulation/a-1.00/0010.hdf5
+
 analysis_description = (
     "MPI parallel turbulence simulation analysis"
 )
@@ -18,29 +21,29 @@ analysis_epilog = (
 
 parser = argparse.ArgumentParser(description=analysis_description, epilog=analysis_epilog)
 
-parser.add_argument('--res',
+parser.add_argument('--res',   # 256
                     required=True,
                     type=int,
                     help='set linear resolution of cubic box')
 
-parser.add_argument('--type',
+parser.add_argument('--type',  # flow
                     required=True,
                     type=str,
                     choices=['transfer','flow','unit-test'],
                     help='set analysis type')
 
-parser.add_argument('--data_type',
+parser.add_argument('--data_type',  # Athena
                     required=True,
                     type=str,
                     choices=['Enzo', 'AthenaPP', 'AthenaHDFC', 'Athena'],
                     help='set data cube type')
 
-parser.add_argument('--data_path',
+parser.add_argument('--data_path',  # /mnt/research/compastro-REU/cossairt_simulation/a-1.00/id0/Turb.0010.vtk
                     required=True,
                     type=str,
                     help='set data location')
 
-parser.add_argument('--outfile',
+parser.add_argument('--outfile',  # /mnt/research/compastro-REU/cossairt_simulation/a-1.00/0010.hdf5
                     type=str,
                     default=None,
                     help='set file to store results')
@@ -54,12 +57,12 @@ parser.add_argument('-b',
                     default=False,
                     help='enable magnetic fields')
 
-parser.add_argument('-forced',
+parser.add_argument('-forced',  # True for us
                     action='store_true',
                     default=False,
                     help='output is actively forced')
 
-parser.add_argument('--eos',
+parser.add_argument('--eos',  # isothermal
                     required=True,
                     type=str,
                     choices=['isothermal','adiabatic'],
@@ -77,7 +80,7 @@ parser.add_argument('-approx-isothermal',
                     help='assume c_s^2 / gamma = p/rho = 1')
                        
 
-parser.add_argument('--terms',
+parser.add_argument('--terms',  # None specified
                     type=str,
                     nargs='+',
                     default=None,
@@ -90,6 +93,13 @@ parser.add_argument('--binning',
                     type=str,
                     choices=['log', 'lin', 'test'],
                     help='set binning used in energy transfer analysis')
+
+# Added
+parser.add_argument('--kernel',
+		    default=None,
+		    type=str,
+		    choices=['KernelBox', 'KernelGauss', 'KernelSharp'],
+		    help='choose a kernel type for filtering')
 
 args = vars(parser.parse_args())
 
@@ -177,7 +187,7 @@ else:
 # Load data
 
 # data dictionary
-fields = read_fields(args)
+fields = read_fields(args) # See IOhelperFuncs.py
 
 # Run energy transfer analysis
 if args['type'] == 'transfer':
@@ -205,7 +215,7 @@ if args['type'] == 'transfer':
     if rank == 0:
         pickle.dump(results,open(outfile,"wb"))    
 
-elif args['type'] == 'flow':
+elif args['type'] == 'flow':  # This is us! Go to FlowAnalysis.py to see what happens next
     
     FA = FlowAnalysis(MPI,args,fields)
     FA.run_analysis()
