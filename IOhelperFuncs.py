@@ -67,7 +67,7 @@ def read_fields(args):
                                        rhoField, velFields, magFields,
                                        accFields, pressField,order)
 
-    elif args['data_type'] == 'Athena': # This is what we use -- AC
+    elif args['data_type'] == 'Athena':
         rhoField = 'density'
         velFields = ['velocity_x', 'velocity_y', 'velocity_z']
         if args['b']:
