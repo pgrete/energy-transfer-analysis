@@ -54,6 +54,7 @@ class FlowAnalysis:
         # maximum integer wavenumber
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))   # How does this math work?
         self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)  # Seems to imply how we split up the x axis according to wavenumbers (k's)?
+        print("K bins shape: ", self.k_bins.shape)
         # if max k does not fall in last bin, remove last bin
         if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
             self.k_bins = self.k_bins[:-1]
@@ -87,6 +88,8 @@ class FlowAnalysis:
     def run_analysis(self):  # This looks like the actual running analysis part!
         
         print("In run_analysis")
+        print("K bins shape is: ", self.k_bins.shape)
+        print("K bins is: ", self.k_bins)
 
         rho = self.rho
         U = self.U
@@ -180,12 +183,14 @@ class FlowAnalysis:
         
         print("In Method B")
         
-        import pdb
-        pdb.set_trace()
+        #import pdb
+        #pdb.set_trace()
 
         # Set up array of filter sizes
+        print("Resolution is: ", self.res)
         delta_x = 1/self.res
-        m = np.linspace(1, self.res/2, 1)
+        print("Delta x size is: ", delta_x)
+        m = np.arange(1, self.res/2, 1)
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
@@ -193,14 +198,14 @@ class FlowAnalysis:
         print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
 
         # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
-        # print("Between m shape and momentum")
         epsilon = all_filtered_momenta = all_filtered_rho = mean = np.zeros(len(k_lm))
         momentum = rho * U
         # print("Momentum is: ", momentum)
         print("Momentum shape is: ", momentum.shape)
-        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1)
+        self.FT_momentum = self.FT_rho = newDistArray(self.FFT,rank=1) # HERE (FT_rho shape is wrong)
         print("FT_momentum shape: ", self.FT_momentum.shape, "\nFT_rho shape: ", self.FT_rho.shape)
         self.momentum_filtered = self.rho_filtered = newDistArray(self.FFT,rank=1)
+        print("momentum_filtered shape: ", self.momentum_filtered.shape, "\nrho_filtered shape: ", self.rho_filtered.shape)
         
         # Check ranks
         my_rank = self.comm.Get_rank()
@@ -216,7 +221,7 @@ class FlowAnalysis:
  
         #FT_rho = self.FFT.forward(self.rho, self.FT_rho)
         self.FT_rho = self.FFT.forward(rho, self.FT_rho)
-        print("FT_rho: ", self.FT_rho)
+        print("FT_rho: ", self.FT_rho) # HERE: This is 3D in the outputs (shouldn't be?)
 
         N = float(self.comm.allreduce(epsilon.size)) # This should be same as k_lm.size?
         # print("N is: ", N)
@@ -224,10 +229,13 @@ class FlowAnalysis:
         # Calculate the cumulative spectrum (epsilon) for each filter length scale
         for i, filter in enumerate(k_lm):
             print("In cumulative spectrum loop for filter length scale ", i)
-            FT_G = self.Kernel(filter)  # Fourier transform of the convolution kernel   # Do we even need this?   
+            print("Filter shape is: ", filter.shape)
+            print("Filter is: ", filter)
+            FT_G = self.Kernel(filter)  # Apparently this is the wrong shape?   
+            print("Kernel shape is: ", FT_G.shape)
             for j in range(3):    
-                print("In momentum_filtered for loop ", j)
-                self.momentum_filtered[j] = self.FFT.backward(FT_G * FT_momentum[j], self.momentum_filtered[j])            
+                print("In momentum_filtered for loop ", j) # Made it to j = 0
+                self.momentum_filtered[j] = self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j]) # We know FT_momentum is shape (3,256,256,256), so shape of self.FT_momentum[j] must be (256,256,256). Apparently something else (either momentum_filtered[j] or FT_G) is shape (223,)           
             self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
             # print("Momentum filtered squared: ", self.momentum_filtered**2)
             # print("Rho filtered: ", self.rho_filtered)
@@ -360,7 +368,7 @@ class FlowAnalysis:
                                             """                                        
         print("In Kernel()")
 
-        # k = self.k_bins # array of wavenumbers 
+        # k = self.k_bins # array of wavenumbers # NO! WRONG!
         KERNEL=self.kernel
         pi=np.pi
         if factor is None:
@@ -383,6 +391,7 @@ class FlowAnalysis:
                             localFac *= 0.5 
                     
             localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
+            #print("FFT of localKern (top hat kernel) is: " fftn(localKern))
             return fftn(localKern)   # Appears to be using a Fast Fourier Transform? What is this `function fftn()`?
             # Returns the localKern in spectral space
             # Then what does it do with it?
@@ -392,9 +401,13 @@ class FlowAnalysis:
             localKern = np.ones_like(self.k_bins)   # Set all kernels equal to 1 to start
             localKern[self.k_bins > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
             # Looks very different from eq. 2.44 and 2.45
+            print("localKern (for KernelSharp) is: ", localKern)
             return localKern
             # Returns localKern in real space
         elif KERNEL == "KernelGauss":   # Gaussian filter
+            print("DELTA shape is: ", DELTA.shape)
+            print("Gaussian kernel is: ", np.exp(-(pi * factor * DELTA/self.res * self.k_bins)**2. /6.) )
+            print("Shape of Gaussian kernel is: ", np.array(np.exp(-(pi * factor * DELTA/self.res * self.k_bins)**2. /6.)).shape)
             return np.exp(-(pi * factor * DELTA/self.res * self.k_bins)**2. /6.)  # Looks different from eq. 2.43
             
         else:
