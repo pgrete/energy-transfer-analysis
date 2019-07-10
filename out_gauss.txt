@@ -1,0 +1,144 @@
+[f0008575@dev-intel18 energy-transfer-analysis]$ srun -n 1 --mem-per-cpu=20G --time=00:10:00 python ~/src/energy-transfer-analysis/run_analysis.py --res 256 --data_path
+ /mnt/scratch/f0008575/a-1.00/id0/Turb.0010.vtk  --data_type Athena --type flow --eos isothermal -forced --outfile /mnt/scratch/f0008575/a-1.00/method_b_0010.hdf5 --ker
+nel KernelGauss
+srun: job 28732646 queued and waiting for resources
+srun: job 28732646 has been allocated resources
+--------------------------------------------------------------------------
+A process has executed an operation involving a call to the
+"fork()" system call to create a child process.  Open MPI is currently
+operating in a condition that could result in memory corruption or
+other system errors; your job may hang, crash, or produce silent
+data corruption.  The use of fork() (or system() or other calls that
+create child processes) is strongly discouraged.
+
+The process that invoked fork was:
+
+  Local host:          [[27878,0],0] (PID 20343)
+
+If you are *absolutely sure* that your application will successfully
+and correctly survive a call to fork(), you may disable this warning
+by setting the mpi_warn_on_fork MCA parameter to 0.
+--------------------------------------------------------------------------
+yt : [INFO     ] 2019-07-10 01:03:32,080 Temporarily setting domain_right_edge = -domain_left_edge. This will be corrected automatically if it is not the case.
+yt : [WARNING  ] 2019-07-10 01:03:32,256 Assuming 1.0 = 1.0 cm
+yt : [WARNING  ] 2019-07-10 01:03:32,257 Assuming 1.0 = 1.0 s
+yt : [WARNING  ] 2019-07-10 01:03:32,257 Assuming 1.0 = 1.0 g
+yt : [INFO     ] 2019-07-10 01:03:32,284 Parameters: current_time              = 0.500221
+yt : [INFO     ] 2019-07-10 01:03:32,284 Parameters: domain_dimensions         = [0 0 0]
+yt : [INFO     ] 2019-07-10 01:03:32,284 Parameters: domain_left_edge          = [0. 0. 0.]
+yt : [INFO     ] 2019-07-10 01:03:32,285 Parameters: domain_right_edge         = [-0. -0. -0.]
+yt : [INFO     ] 2019-07-10 01:03:32,285 Parameters: cosmological_simulation   = 0.0
+Loading /mnt/scratch/f0008575/a-1.00/id0/Turb.0010.vtk
+Chunk dimensions =  (256, 256, 256)
+WARNING: remember assuming domain of L = 1
+WARNING: assuming isothermal EOS with c_s = 1, i.e. P = rho
+K bins shape:  (223,)
+In run_analysis
+K bins shape is:  (223,)
+K bins is:  [  0.5   1.5   2.5   3.5   4.5   5.5   6.5   7.5   8.5   9.5  10.5  11.5
+  12.5  13.5  14.5  15.5  16.5  17.5  18.5  19.5  20.5  21.5  22.5  23.5
+  24.5  25.5  26.5  27.5  28.5  29.5  30.5  31.5  32.5  33.5  34.5  35.5
+  36.5  37.5  38.5  39.5  40.5  41.5  42.5  43.5  44.5  45.5  46.5  47.5
+  48.5  49.5  50.5  51.5  52.5  53.5  54.5  55.5  56.5  57.5  58.5  59.5
+  60.5  61.5  62.5  63.5  64.5  65.5  66.5  67.5  68.5  69.5  70.5  71.5
+  72.5  73.5  74.5  75.5  76.5  77.5  78.5  79.5  80.5  81.5  82.5  83.5
+  84.5  85.5  86.5  87.5  88.5  89.5  90.5  91.5  92.5  93.5  94.5  95.5
+  96.5  97.5  98.5  99.5 100.5 101.5 102.5 103.5 104.5 105.5 106.5 107.5
+ 108.5 109.5 110.5 111.5 112.5 113.5 114.5 115.5 116.5 117.5 118.5 119.5
+ 120.5 121.5 122.5 123.5 124.5 125.5 126.5 127.5 128.5 129.5 130.5 131.5
+ 132.5 133.5 134.5 135.5 136.5 137.5 138.5 139.5 140.5 141.5 142.5 143.5
+ 144.5 145.5 146.5 147.5 148.5 149.5 150.5 151.5 152.5 153.5 154.5 155.5
+ 156.5 157.5 158.5 159.5 160.5 161.5 162.5 163.5 164.5 165.5 166.5 167.5
+ 168.5 169.5 170.5 171.5 172.5 173.5 174.5 175.5 176.5 177.5 178.5 179.5
+ 180.5 181.5 182.5 183.5 184.5 185.5 186.5 187.5 188.5 189.5 190.5 191.5
+ 192.5 193.5 194.5 195.5 196.5 197.5 198.5 199.5 200.5 201.5 202.5 203.5
+ 204.5 205.5 206.5 207.5 208.5 209.5 210.5 211.5 212.5 213.5 214.5 215.5
+ 216.5 217.5 218.5 219.5 220.5 221.5 222.5]
+Finished KinEnSpecific
+In Acc is not None
+Just wrote statistics for AbsRotU
+In Method B
+Resolution is:  256
+Delta x size is:  0.00390625
+Momentum shape is:  (3, 256, 256, 256)
+FT_momentum shape:  (3, 256, 256, 256)
+FT_rho shape:  (3, 256, 256, 256)
+momentum_filtered shape:  (3, 256, 256, 256)
+rho_filtered shape:  (3, 256, 256, 256)
+Hello! I'm rank 0 from 1 running in total...
+About to perform FFT
+In FT_momentum for loop  0
+m shape:  (127,)
+lm shape:  (127,)
+k_lm shape:  (127,)
+    -3.38766465e-03-1.48042044e-03j -1.89466028e-03-3.70002892e-03j]]]]
+In cumulative spectrum loop for filter length scale  0
+Filter shape is:  ()
+Filter is:  128.0
+In Kernel()
+DELTA shape is:  ()
+Gaussian kernel is:  [9.02299856e-001 3.96422224e-001 7.65195145e-002 6.48923532e-003
+ 2.41780876e-004 3.95783310e-006 2.84642740e-008 8.99393722e-011
+ 1.24855218e-013 7.61501303e-017 2.04052401e-020 2.40225925e-024
+ 1.24252502e-028 2.82356324e-033 2.81901250e-038 1.23652696e-043
+ 2.38296291e-049 2.01761399e-055 7.50526422e-062 1.22659446e-068
+ 8.80730657e-076 2.77838443e-083 3.85077962e-091 2.34483398e-099
+ 6.27310619e-108 7.37327251e-117 3.80754493e-126 8.63847129e-136
+ 8.61064844e-146 3.77087318e-156 7.25529545e-167 6.13303415e-178
+ 2.27773277e-189 3.71652675e-201 2.66427384e-213 8.39126749e-226
+ 1.16113676e-238 7.05905054e-252 1.88545561e-265 2.21255177e-279
+ 1.14071637e-293 2.58386021e-308 2.47032823e-323 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000 0.00000000e+000
+ 0.00000000e+000 0.00000000e+000 0.00000000e+000]
+Shape of Gaussian kernel is:  (223,)
+Kernel shape is:  (223,)
+In momentum_filtered for loop  0
+Traceback (most recent call last):
+  File "/mnt/home/f0008575/src/energy-transfer-analysis/run_analysis.py", line 221, in <module>
+    FA.run_analysis()
+  File "/mnt/home/f0008575/src/energy-transfer-analysis/FlowAnalysis.py", line 238, in run_analysis
+    self.momentum_filtered[j] = self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j]) # We know FT_momentum is shape (3,256,256,256), so shape of self.FT_momentum[j] must be (256,256,256). Apparently something else (either momentum_filtered[j] or FT_G) is shape (223,)
+ValueError: operands could not be broadcast together with shapes (223,) (256,256,256)

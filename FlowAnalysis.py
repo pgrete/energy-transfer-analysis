@@ -10,12 +10,9 @@ from scipy.stats import binned_statistic
 from math import ceil
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIrotX
 
-# Aurora Cossairt's comments associated with command:
-# srun -n 8 --mem-per-cpu=10G python ~/src/energy-transfer-analysis/run_analysis.py --res 256 --data_path /mnt/research/compastro-REU/cossairt_simulation/a-1.00/id0/Turb.0010.vtk  --data_type Athena --type flow --eos isothermal -forced --outfile /mnt/research/compastro-REU/cossairt_simulation/a-1.00/0010.hdf5
-
 class FlowAnalysis:
     
-    def __init__(self, MPI, args, fields):  # We're doing some parallel programming!
+    def __init__(self, MPI, args, fields):
         self.MPI = MPI
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
@@ -36,18 +33,17 @@ class FlowAnalysis:
         else:
             self.global_min_max = {}
 
-        self.rho = fields['rho']  # These are coming from the fields argument, which we gathered from args in run_analysis.py
-        self.U = fields['U']  # These variables are density, velocity, magnetic field, acceleration, pressure
-        self.B = fields['B']  # equation of state, adiabatic gamma index, and the existence of magnetic fields 
+        self.rho = fields['rho']
+        self.U = fields['U']
+        self.B = fields['B']
         self.Acc = fields['Acc']
         self.P = fields['P']
 
         self.eos = args['eos']
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
-        
-        self.kernel = args['kernel']  # Added
-        
+
+
         if self.rank == 0:
             self.outfile_path = args['outfile']
 
@@ -55,23 +51,22 @@ class FlowAnalysis:
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))   # How does this math work?
         self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)  # Seems to imply how we split up the x axis according to wavenumbers (k's)?
         print("K bins shape: ", self.k_bins.shape)
+
         # if max k does not fall in last bin, remove last bin
         if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
             self.k_bins = self.k_bins[:-1]
 
         N = np.array([self.res,self.res,self.res], dtype=int)
         # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
-            # I think we use 2*pi because it makes the math convenient when working with wavenumbers
         L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
         self.FFT = PFFT(self.comm, N, axes=(0,1,2), collapse=False,
                         slab=True, dtype=np.complex128)
 
-        self.localK = get_local_wavenumbermesh(self.FFT, L)  # Use FFT to define each k value along the x axis (?)
-        self.localKmag = np.linalg.norm(self.localK,axis=0)  
+        self.localK = get_local_wavenumbermesh(self.FFT, L)
+        self.localKmag = np.linalg.norm(self.localK,axis=0)
 
-        self.localKunit = np.copy(self.localK)  # Not sure what this means...
+        self.localKunit = np.copy(self.localK)
         # fixing division by 0 for harmonic part
-            # What's the "harmonic part"?
         if self.rank == 0:
             if self.localKmag[0,0,0] == 0.:
                 self.localKmag[0,0,0] = 1.
@@ -84,13 +79,9 @@ class FlowAnalysis:
         self.localKunit /= self.localKmag
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
-    
-    def run_analysis(self):  # This looks like the actual running analysis part!
-        
-        print("In run_analysis")
-        print("K bins shape is: ", self.k_bins.shape)
-        print("K bins is: ", self.k_bins)
 
+    def run_analysis(self):
+        
         rho = self.rho
         U = self.U
         B = self.B
@@ -100,8 +91,8 @@ class FlowAnalysis:
         if self.rank == 0:
             self.outfile = h5py.File(self.outfile_path, "w")
 
-        self.vector_power_spectrum('u',U)  # Creating power spectra of vector variables? 
-        self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)  # Where do 'u', 'rhoU' and 'rhoThirdU' appear on the energy spectra graph? Not on either axis...
+        self.vector_power_spectrum('u',U)
+        self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
         
         vec_harm, vec_sol, vec_dil = self.decompose_vector(U)
@@ -112,22 +103,18 @@ class FlowAnalysis:
         del vec_harm, vec_sol, vec_dil
         
 
-        self.get_and_write_statistics_to_file(rho,"rho")  # Is the file 'rho'?
+        self.get_and_write_statistics_to_file(rho,"rho")
         self.get_and_write_statistics_to_file(np.log(rho),"lnrho")
-        self.scalar_power_spectrum('rho',rho)   # Ok, so this one is a scalar because doesn't contain 'U'?
+        self.scalar_power_spectrum('rho',rho)
         self.scalar_power_spectrum('lnrho',np.log(rho))
 
-        V2 = np.sum(U**2.,axis=0)   # That looks like Kinetic Energy (basically)
-        self.get_and_write_statistics_to_file(np.sqrt(V2),"u")  # That looks like velocity
+        V2 = np.sum(U**2.,axis=0)
+        self.get_and_write_statistics_to_file(np.sqrt(V2),"u")
 
-        self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")  # KinEn # Does this do this for each rho?
-        self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")  # What is KE specific
-
-        print("Finished KinEnSpecific")
+        self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")
+        self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")
 
         if Acc is not None:
-            print("In Acc is not None")
-
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
             self.get_and_write_statistics_to_file(Amag,"a")
             self.vector_power_spectrum('a',Acc)
@@ -136,9 +123,9 @@ class FlowAnalysis:
             if self.rank == 0:
                 self.outfile.require_dataset('U-A/corr', (1,), dtype='f')[0] = corrUA
             
-            UHarm, USol, UDil = self.decompose_vector(U)  # We called these when calculating mean spectra?
+            UHarm, USol, UDil = self.decompose_vector(U)
             self.get_and_write_statistics_to_file(
-                np.sum(Acc*U,axis=0)/(  # Acceleration times u (propogation speed?) What does that mean?
+                np.sum(Acc*U,axis=0)/(
                     np.linalg.norm(Acc,axis=0)*np.linalg.norm(U,axis=0)),"Angle_u_a")
             self.get_and_write_statistics_to_file(
                 np.sum(Acc*USol,axis=0)/(
@@ -150,8 +137,6 @@ class FlowAnalysis:
         DivU = MPIdivX(self.comm,U)
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
         self.get_and_write_statistics_to_file(np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0)),"AbsRotU")
-
-        print("Just wrote statistics for AbsRotU")
 
         if self.eos == 'adiabatic':
             self.gamma = self.gamma
@@ -264,18 +249,17 @@ class FlowAnalysis:
             print("Printing outfiles")
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = k_lm
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (4,len(k_lm)-1), dtype='f')[:,:] = TotEnergy  # What does this function return? 
-        print("Finished Method B", file=sys.stderr)
+        print("Finished Method B")
 
-        if not self.has_b_fields:  # We don't have b fields... is this where we close?
-            print("In not self.has_b_fields")
+        if not self.has_b_fields:
             if self.rank == 0:
                 self.outfile.close()
             return
 
-        B2 = np.sum(B**2.,axis=0)  # Eyy it's some magnetic pressure! (or magnetic energy? idk...)
+        B2 = np.sum(B**2.,axis=0)
 
-        self.get_and_write_statistics_to_file(np.sqrt(B2),"B")  # seems like there's a lot contained in these files
-        self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity") # There's magnetic energy density:)
+        self.get_and_write_statistics_to_file(np.sqrt(B2),"B")
+        self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity")
 
         if self.eos == 'adiabatic':
             TotPres = P + B2/2.
@@ -284,13 +268,13 @@ class FlowAnalysis:
             self.get_2d_hist('P-MagEnDensity',P,0.5 * B2)
             
             plasmaBeta = 2.* P / B2
-        elif self.eos == 'isothermal':  # That's us!
+        elif self.eos == 'isothermal':
             if self.rank == 0:
                 print('Warning: assuming c_s = 1 for isothermal EOS')
-            TotPres = rho + B2/2.  # Why is this math true?
+            TotPres = rho + B2/2.
             corrPBcomp = self.get_corr_coeff(rho,np.sqrt(B2)/rho**(2./3.))
             
-            plasmaBeta = 2.*rho/B2   # Ratio of gas pressure to magnetic pressure
+            plasmaBeta = 2.*rho/B2
         else:
             raise SystemExit('Unknown EOS', self.eos)
 
@@ -302,18 +286,18 @@ class FlowAnalysis:
             self.outfile.require_dataset('P-Bcomp/corr', (1,), dtype='f')[0] = corrPBcomp
 
         AlfMach2 = V2*rho/B2
-        AlfMach = np.sqrt(AlfMach2)  # Ratio of characteristic velocity to isothermal speed of sound
+        AlfMach = np.sqrt(AlfMach2)
 
         self.get_and_write_statistics_to_file(AlfMach,"AlfvenicMach")
 
-        self.vector_power_spectrum('B',B)  # What does this vector_power_spectrum() actually do?
+        self.vector_power_spectrum('B',B)
 
         # this is cheap... and only works for slab decomp on x-axis
         # np.sum is required for slabs with width > 1
-        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:   # What's this negative indexing??
+        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:
             raise SystemExit('Calculation of dispersion measures only works for slabs')
 
-        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)  # What is DM and RM? Maybe domain?
+        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)
         RM = self.comm.allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
         chunkSize = int(self.res/self.size)
         endIdx = int((self.rank + 1) * chunkSize)
@@ -411,18 +395,18 @@ class FlowAnalysis:
             return np.exp(-(pi * factor * DELTA/self.res * self.k_bins)**2. /6.)  # Looks different from eq. 2.43
             
         else:
-            sys.exit("Unknown kernel used")                                                                                                                                                                                                         
+            sys.exit("Unknown kernel used")                                                                         
 
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
         """
-        histSum = binned_statistic(k,quantity,bins=self.k_bins,statistic='sum')[0]  # What is binned_statistic?
+        histSum = binned_statistic(k,quantity,bins=self.k_bins,statistic='sum')[0]
         kSum = binned_statistic(k,k,bins=self.k_bins,statistic='sum')[0]
         histCount = np.histogram(k,bins=self.k_bins)[0]
 
         totalHistSum = self.comm.reduce(histSum.astype(np.float64))
         totalKSum = self.comm.reduce(kSum.astype(np.float64))
-        totalHistCount = self.comm.reduce(histCount.astype(np.float64))  # how many histograms to make?
+        totalHistCount = self.comm.reduce(histCount.astype(np.float64))
 
         if self.rank == 0:
 
@@ -433,18 +417,6 @@ class FlowAnalysis:
                 sys.exit(1)
 
             # calculate corresponding k to to bin
-            # this help to overcome statistics for low k bins
-            centeredK = totalKSum / totalHistCount
-
-
-            # calculate corresponding k to to bin
-            # this help to overcome statistics for low k bins
-            centeredK = totalKSum / totalHistCount
-
-            ###  "integrate" over k-shells
-            # normalized by mean shell surface
-            valsShell = 4. * np.pi * centeredK**2. * (totalHistSum / totalHistCount)
-            # normalized by mean shell volume
             # this help to overcome statistics for low k bins
             centeredK = totalKSum / totalHistCount
 
@@ -498,13 +470,13 @@ class FlowAnalysis:
         # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
         harm = total / (N/3)
 
-        dil = self.get_rotation_free_vec_field(vec) # Here is harm dil and sol!
+        dil = self.get_rotation_free_vec_field(vec)
         sol = vec - harm.reshape((3,1,1,1)) - dil
 
         return harm, sol, dil
 
 
-    def scalar_power_spectrum(self,name,field):  # Oh hey! This is one of the things!
+    def scalar_power_spectrum(self,name,field):
 
         FT_field = newDistArray(self.FFT)
         FT_field = self.FFT.forward(field, FT_field)
@@ -512,9 +484,9 @@ class FlowAnalysis:
         FT_fieldAbs2 = np.abs(FT_field)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_fieldAbs2.reshape(-1))
 
-        if self.rank == 0: # This appears to be where we're writing files
+        if self.rank == 0:
             self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
-            self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full  # What does this function return?
+            self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
 
 # e.g. (38) in https://arxiv.org/pdf/1101.0150.pdf
     def co_spectrum(self,name,fieldA,fieldB):
@@ -534,10 +506,10 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/CoSpec/Abs', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Abs
             self.outfile.require_dataset(name + '/CoSpec/Real', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Real
 
-    def vector_power_spectrum(self, name, vec):  # Eyyy there it is
+    def vector_power_spectrum(self, name, vec):
         FT_vec = newDistArray(self.FFT,rank=1)
         for i in range(3):
-            FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])  # Does exactly the same thing as scalar, but for all components of an array
+            FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])
 
         FT_vecAbs2 = np.linalg.norm(FT_vec,axis=0)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_vecAbs2.reshape(-1))
@@ -552,7 +524,7 @@ class FlowAnalysis:
         # project components
         localVecDotKunit = np.sum(FT_vec*self.localKunit,axis = 0)
 
-        FT_Dil = localVecDotKunit * self.localKunit  # Still have no idea what "Dil" and "Sol" mean
+        FT_Dil = localVecDotKunit * self.localKunit
         FT_DilAbs2 = np.linalg.norm(FT_Dil,axis=0)**2.
         PS_Dil = self.normalized_spectrum(self.localKmag.reshape(-1),FT_DilAbs2.reshape(-1))
         
@@ -569,7 +541,7 @@ class FlowAnalysis:
         totPowSol = self.comm.allreduce(np.sum(FT_SolAbs2))
         totPowHarm = np.linalg.norm(FT_vec[:,0,0,0],axis=0)**2.
 
-        if self.rank == 0:  # Is this where it actually makes the hd5f file?
+        if self.rank == 0:
             self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
             self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
             self.outfile.require_dataset(name + '/PowSpec/Dil', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Dil
@@ -580,14 +552,14 @@ class FlowAnalysis:
 
 
 
-    def get_and_write_statistics_to_file(self,field,name,bounds=None):  # Aha! Explains field
+    def get_and_write_statistics_to_file(self,field,name,bounds=None):
         """
-            field - 3d scalar field to get statistics from  
+            field - 3d scalar field to get statistics from
             name - human readable name of the field
             bounds - tuple, lower and upper bound for histogram, if None then min/max
         """
         
-        N = float(self.comm.allreduce(field.size))  # some nice statistical outputs
+        N = float(self.comm.allreduce(field.size))
         total = self.comm.allreduce(np.sum(field))
         mean = total / N
 
@@ -608,7 +580,7 @@ class FlowAnalysis:
         globAbsMin = self.comm.allreduce(np.min(np.abs(field)),op=self.MPI.MIN)
         globAbsMax = self.comm.allreduce(np.max(np.abs(field)),op=self.MPI.MAX)
 
-        if self.rank == 0:  # First node (santa) saves all the means, rms's, other statistical children
+        if self.rank == 0:
             self.outfile.require_dataset(name + '/moments/mean', (1,), dtype='f')[0] = mean
             self.outfile.require_dataset(name + '/moments/rms', (1,), dtype='f')[0] = rms
             self.outfile.require_dataset(name + '/moments/var', (1,), dtype='f')[0] = var
@@ -627,7 +599,7 @@ class FlowAnalysis:
             HistBins = "Sim"
 
         Bins = np.linspace(bounds[0],bounds[1],129)
-        hist = np.histogram(field.reshape(-1),bins=Bins)[0]  # Histograms?
+        hist = np.histogram(field.reshape(-1),bins=Bins)[0]
         totalHist = self.comm.allreduce(hist)
 
         if self.rank == 0:
@@ -660,7 +632,7 @@ class FlowAnalysis:
 
         return cov / (stdX*stdY)
 
-    def get_2d_hist(self,name,X,Y,bounds = None):  # Getting a 2D hist?
+    def get_2d_hist(self,name,X,Y,bounds = None):
         if bounds is None:
             globXMin = self.comm.allreduce(np.min(X),op=self.MPI.MIN)
             globXMax = self.comm.allreduce(np.max(X),op=self.MPI.MAX)
@@ -674,8 +646,8 @@ class FlowAnalysis:
             HistBins = "Sim"
         
         
-        XBins = np.linspace(bounds[0][0],bounds[0][1],129)  # Why 129?
-        YBins = np.linspace(bounds[1][0],bounds[1][1],129)  # Why upside down?
+        XBins = np.linspace(bounds[0][0],bounds[0][1],129)
+        YBins = np.linspace(bounds[1][0],bounds[1][1],129)
 
         hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
         totalHist = self.comm.allreduce(hist)
@@ -683,6 +655,18 @@ class FlowAnalysis:
         if self.rank == 0:
             tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
             tmp[0] = XBins
+            tmp[1] = YBins
+            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
+            tmp[:,:] = totalHist.astype(float)
+        
+        Xname, Yname = name.split('-')
+        if Xname in self.global_min_max.keys() and Yname in self.global_min_max.keys():
+            XBins = np.linspace(self.global_min_max[Xname][0],self.global_min_max[Xname][1],129)
+            YBins = np.linspace(self.global_min_max[Yname][0],self.global_min_max[Yname][1],129)
+
+            hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
+            totalHist = self.comm.allreduce(hist)
+            
             HistBins = 'globalMinMax'
 
             if self.rank == 0:
