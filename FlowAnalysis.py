@@ -185,47 +185,35 @@ class FlowAnalysis:
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
-        print("m shape: ", m.shape, "\nlm shape: ", lm.shape, "\nk_lm shape: ", k_lm.shape, file=sys.stderr)
 
         # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
         epsilon = np.zeros(len(k_lm), dtype=complex)
-        print("Epsilon after type conversion: ", epsilon)
         momentum = rho * U
         dim = newDistArray(self.FFT,rank=1)  
-        print("Shape of dim is: ", dim.shape)
         self.FT_momentum = newDistArray(self.FFT,rank=1)
-        print("Shape of FT_momentum is: ", self.FT_momentum.shape)
-        self.FT_rho = newDistArray(self.FFT,rank=0)  # HERE (FT_rho shape was wrong with rank = 1. Fixed?) 
-        print("Shape of FT_rho is: ", self.FT_rho.shape)
+        self.FT_rho = newDistArray(self.FFT,rank=0)   
         self.momentum_filtered = newDistArray(self.FFT,rank=1) 
-        self.rho_filtered = newDistArray(self.FFT,rank=0)  # HERE (FT_rho shape is wrong)
-
+        self.rho_filtered = newDistArray(self.FFT,rank=0) 
+        N = self.res * self.res * self.res
+        
         # Check ranks
         my_rank = self.comm.Get_rank()
         my_size = self.comm.Get_size()
         print("Hello! I'm rank %d from %d running in total..." % (my_rank, my_size) )
 
         # I based this section on line 150 of EnergyTransfer.py. Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
-        #import pdb
-        #pdb.set_trace()
-
         for i in range(3):
             self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
-            # print("FT_momentum[", i, "]: ", self.FT_momentum[i])
- 
-        #FT_rho = self.FFT.forward(self.rho, self.FT_rho)
+        
         self.FT_rho = self.FFT.forward(rho, self.FT_rho)
-        #print("FT_rho: ", self.FT_rho) # HERE: This is 3D in the outputs (shouldn't be?)
-
-        N = self.res * self.res * self.res
 
         # Calculate the cumulative spectrum (epsilon) for each filter length scale
         for i, filter in enumerate(k_lm):
             FT_G = self.Kernel(filter)  
-            print("Kernel shape is: ", FT_G.shape)
+            self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
+            
             for j in range(3):    
                 self.momentum_filtered[j] = self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j]) 
-            self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
             
             for k in range(3):
                 dim[k] = 0.5 * abs(self.momentum_filtered[k]**2) / abs(self.rho_filtered) 
@@ -233,25 +221,14 @@ class FlowAnalysis:
                 # so dim[k] contains all the energies in all cells associated with dimension k
  
             # Adds up the energies of all dimensions. Result is still an array of shape (256, 256, 256)
-            #import pdb
-            #pdb.set_trace()
-
             all_dims = np.sum(dim, axis = 0) 
-            #print("all dims is: ", all_dims)
-            # Now, must add up all the energies from all the cells. Apparently this requires a local sum and an overall sum? So do I use my_sum?
             local_sum = np.sum(all_dims)
-            #print("local sum is: ", local_sum)
             total = self.comm.allreduce(local_sum)
-            #print("total is: ", total)
             epsilon[i] = total / N
-            #print("Mean is: ", mean)
-            #epsilon[i] = 0.5.astype(complex) * mean 
-            #print("Epsilon ", i, ": ", epsilon[i])
 
         # Calculate the energy spectrum for each filter length scale (use equation 33)
         TotEnergy = np.zeros(len(k_lm)-1)
         for i in range(len(k_lm) - 1):
-            print("In TotEnergy loop for filter length scale ", i)
             TotEnergy[i] = epsilon[i+1] - epsilon[i]
             print("Total energy at position ", i, " is: ", TotEnergy[i])
             
@@ -261,10 +238,16 @@ class FlowAnalysis:
         # But I probably still want it to print to power spectrum over k_bins... right?
         if self.rank == 0:
             print("Printing outfiles")
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = k_lm
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (4,len(k_lm)-1), dtype='f')[:,:] = TotEnergy  # What does this function return? 
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = self.k_bins
+            # Before, the above was k_lm. Should we be plotting over bins, or over filters? (I think the filters are just for the calculations, and we don't use them after that)
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (4,len(k_lm)-1), dtype='f')[:,:] = TotEnergy
+
         print("Finished Method B", file=sys.stderr)
 
+        ###################
+        # End of Method B #
+        ###################
+        
         if not self.has_b_fields:  # We don't have b fields... is this where we close?
             print("In not self.has_b_fields")
             if self.rank == 0:

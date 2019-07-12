@@ -17,7 +17,7 @@ export PATH=/mnt/home/f0008575/yt-conda/bin:$PATH
 
 echo "Beginning analysis"
 
-srun -n 8 --mem-per-cpu=20G --time=00:20:00 python ~/src/energy-transfer-analysis/run_analysis.py --res 256 --data_path /mnt/scratch/f0008575/a-1.00/id0/Turb.0010.vtk  --data_type Athena --type flow --eos isothermal -forced --outfile /mnt/scratch/f0008575/a-1.00/method_b_0010.hdf5 --kernel KernelGauss
+srun -n 1 --mem-per-cpu=20G --time=00:30:00 python ~/src/energy-transfer-analysis/run_analysis.py --res 256 --data_path /mnt/scratch/f0008575/a-1.00/id0/Turb.0010.vtk  --data_type Athena --type flow --eos isothermal -forced --outfile /mnt/scratch/f0008575/a-1.00/method_b_0010.hdf5 --kernel KernelGauss
 
 echo "Finished analysis"
 
