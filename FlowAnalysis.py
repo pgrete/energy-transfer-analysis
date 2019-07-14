@@ -208,7 +208,8 @@ class FlowAnalysis:
         self.FT_rho = self.FFT.forward(rho, self.FT_rho)
 
         # Calculate the cumulative spectrum (epsilon) for each filter length scale
-        for i, filter in enumerate(k_lm):
+        for i, k in enumerate(k_lm):
+            filter = self.res/(2*k)
             FT_G = self.Kernel(filter)  
             self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
             
@@ -238,9 +239,9 @@ class FlowAnalysis:
         # But I probably still want it to print to power spectrum over k_bins... right?
         if self.rank == 0:
             print("Printing outfiles")
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = self.k_bins
-            # Before, the above was k_lm. Should we be plotting over bins, or over filters? (I think the filters are just for the calculations, and we don't use them after that)
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (4,len(k_lm)-1), dtype='f')[:,:] = TotEnergy
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = m
+            # Before, the above was k_lm, and then self.k_bins. Should we be plotting over bins, or over filters? (I think the filters are just for the calculations, and we don't use them after that)
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
 
         print("Finished Method B", file=sys.stderr)
 
@@ -383,12 +384,12 @@ class FlowAnalysis:
             localKern = np.ones_like(k)   # Set all kernels equal to 1 to start
             localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
             # Looks very different from eq. 2.44 and 2.45
-            print("localKern (for KernelSharp) is: ", localKern)
+            # print("localKern (for KernelSharp) is: ", localKern)
             return localKern
             # Returns localKern in real space
         elif KERNEL == "KernelGauss":   # Gaussian filter
             print("DELTA shape is: ", DELTA.shape)
-            print("Gaussian kernel is: ", np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.) )
+            # print("Gaussian kernel is: ", np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.) )
             print("Shape of Gaussian kernel is: ", np.array(np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)).shape)
             return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)  # Looks different from eq. 2.43
             
