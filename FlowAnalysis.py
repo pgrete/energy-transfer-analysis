@@ -180,11 +180,12 @@ class FlowAnalysis:
         
         # Set up array of filter sizes
         delta_x = 1/self.res
-        m = np.arange(1, self.res/2, 1)
+        m = np.arange(self.res/2 - 1, 0, -1)
         print("M is: ", m)
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
+        print("K_lm is: ", k_lm)
 
         momentum = rho * U
         epsilon = np.zeros(len(k_lm)) # Used dtype = complex
@@ -202,25 +203,24 @@ class FlowAnalysis:
             # Check ranks
             my_rank = self.comm.Get_rank()
             my_size = self.comm.Get_size()
-            # print("Hello! I'm rank %d from %d running in total..." % (my_rank, my_size))
 
             # Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
-            for i in range(3):
-                self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
+            for j in range(3):
+                self.FT_momentum[j] = self.FFT.forward(momentum[j], self.FT_momentum[j])
         
             self.FT_rho = self.FFT.forward(rho, self.FT_rho)
             
             # Calculate the cumulative spectrum (epsilon) for each filter length scale
             filter = self.res/(2*k) # Shouldn't this be an integer?
-            print("Filter is: ", filter, " on rank %d" % my_rank)
+            # print("Filter is: ", filter, " on rank %d" % my_rank)
             FT_G = self.Kernel(filter)  
             self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
             
-            for j in range(3):    
-                self.momentum_filtered[j] = (self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j])).real
+            for l in range(3):    
+                self.momentum_filtered[l] = (self.FFT.backward(FT_G * self.FT_momentum[l], self.momentum_filtered[l])).real
             
-            for q in range(3):
-                dim[q] = 0.5 * abs(self.momentum_filtered[q]**2) / abs(self.rho_filtered) 
+            for m in range(3):
+                dim[m] = 0.5 * abs(self.momentum_filtered[m]**2) / abs(self.rho_filtered) 
                 # creates an array of shape (256, 256, 256). This gets saved to one of the dimensions of dim.
                 # so dim[k] contains all the energies in all cells associated with dimension k
  
@@ -228,18 +228,18 @@ class FlowAnalysis:
             all_dims = np.sum(dim, axis = 0) 
             local_sum = np.sum(all_dims)
             total = (self.comm.allreduce(local_sum)).real
-            print("\nTotal for k ", k, " is: ", total, " on rank %d: " % my_rank)
+            # print("\nTotal for k ", k, " is: ", total, " on rank %d: " % my_rank)
             epsilon[i] = total / N
-            print("Epsilon[", i, "] is: ", epsilon[i], " on rank %d: " % my_rank)
+            # print("Epsilon[", i, "] is: ", epsilon[i], " on rank %d: " % my_rank)
 
         # Calculate the energy spectrum for each filter length scale (use equation 33)
-        print("Epsilon outside the for loop is: ", epsilon[:], " on rank %d " % my_rank)
+        # print("Epsilon outside the for loop is: ", epsilon[:], " on rank %d " % my_rank)
         TotEnergy = np.zeros(len(k_lm)-1)
         
         # So, we start with TotEnergy[0] = epsilon[m=2] - epsilon[m=1], then do epsilon[m=3]-epsilon[m=2], and so on
         # Ending with TotEnergy[125] = epsilon[m=127] - epsilon[m=126]
         for i in range(len(k_lm) - 1):
-            TotEnergy[i] = epsilon[i+1] - epsilon[i]
+            TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
             #print("epsilon[i+1] is: ", epsilon[i+1])
             #print("epsilon[i] is: ", epsilon[i])
             #print("Total energy at position ", i, " is: ", TotEnergy[i])
@@ -247,9 +247,10 @@ class FlowAnalysis:
         # Make final m_bins (same as m but there's no m = 1, because that would require an m = 0)
         k_lm_bins = np.zeros(len(k_lm)-1)
         k_lm_bins[:] = (k_lm[0:-1] - k_lm[1:]) / 2 + k_lm[1:]
+        print("K_lm_bins is: ", k_lm_bins)
 
         if self.rank == 0:
-            print("Printing outfiles")
+            # print("Printing outfiles")
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm_bins
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
 
@@ -359,8 +360,6 @@ class FlowAnalysis:
         DELTA  - filter width (in grid cells)   # This is 'l', the filtering scale (aka spatial cutoff length)
         factor - (optional) multiplicative factor of the filter width
                                             """                                        
-        print("In Kernel()")
-
         k = self.localKmag # array of wavenumbers # NO! WRONG!
         KERNEL = self.kernel
         pi = np.pi
@@ -384,23 +383,13 @@ class FlowAnalysis:
                             localFac *= 0.5 
                     
             localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
-            #print("FFT of localKern (top hat kernel) is: " fftn(localKern))
             return fftn(localKern)   # Appears to be using a Fast Fourier Transform? What is this `function fftn()`?
-            # Returns the localKern in spectral space
-            # Then what does it do with it?
-            # Never deals with cutoff wave number... weird?
             
         elif KERNEL == "KernelSharp":
             localKern = np.ones_like(k)   # Set all kernels equal to 1 to start
             localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
-            # Looks very different from eq. 2.44 and 2.45
-            print("localKern (for KernelSharp) is: ", localKern)
             return localKern
-            # Returns localKern in real space
         elif KERNEL == "KernelGauss":   # Gaussian filter
-            print("DELTA shape is: ", DELTA.shape)
-            # print("Gaussian kernel is: ", np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.) )
-            print("Shape of Gaussian kernel is: ", np.array(np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)).shape)
             return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)  # Looks different from eq. 2.43
             
         else:
