@@ -211,15 +211,13 @@ class FlowAnalysis:
             self.FT_rho = self.FFT.forward(rho, self.FT_rho)
             
             # Calculate the cumulative spectrum (epsilon) for each filter length scale
-            filter = self.res/(2*k) # filter width (in grid cells) # *Try with int because of rounding issues?
+            filter = self.res/(2*k) # Shouldn't this be an integer?
             print("Filter is: ", filter, " on rank %d" % my_rank)
             FT_G = self.Kernel(filter)  
             self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
-            # print("rho filtered is: ", self.rho_filtered)
             
             for j in range(3):    
                 self.momentum_filtered[j] = (self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j])).real
-                # print("Momentum filtered [", j, "] is: ", self.momentum_filtered[j])
             
             for q in range(3):
                 dim[q] = 0.5 * abs(self.momentum_filtered[q]**2) / abs(self.rho_filtered) 
@@ -247,18 +245,12 @@ class FlowAnalysis:
             #print("Total energy at position ", i, " is: ", TotEnergy[i])
             
         # Make final m_bins (same as m but there's no m = 1, because that would require an m = 0)
-        # m_bins = np.arange(2, self.res/2, 1)
         k_lm_bins = np.zeros(len(k_lm)-1)
         k_lm_bins[:] = (k_lm[0:-1] - k_lm[1:]) / 2 + k_lm[1:]
 
-        # Still need to output this spectrum somehow... see line 467 (?)
-        # In line 492, they use self.k_bins and totPowFull
-        # For me, everything is based off of k_lm
-        # But I probably still want it to print to power spectrum over k_bins... right?
         if self.rank == 0:
             print("Printing outfiles")
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm_bins
-            # Before, the above was k_lm, and then self.k_bins. Should we be plotting over bins, or over filters? (I think the filters are just for the calculations, and we don't use them after that), and now it's k_lm_bins :P
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
 
         print("Finished Method B", file=sys.stderr)
