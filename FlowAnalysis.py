@@ -96,8 +96,8 @@ class FlowAnalysis:
         if self.rank == 0:
             self.outfile = h5py.File(self.outfile_path, "w")
 
-        self.vector_power_spectrum('u',U)  # Creating power spectra of vector variables? 
-        self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)  # Where do 'u', 'rhoU' and 'rhoThirdU' appear on the energy spectra graph? Not on either axis...
+        self.vector_power_spectrum('u',U) 
+        self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
         
         vec_harm, vec_sol, vec_dil = self.decompose_vector(U)
@@ -106,7 +106,6 @@ class FlowAnalysis:
         self.vector_power_spectrum('rhou_s',np.sqrt(rho)*vec_sol)
         self.vector_power_spectrum('rhou_c',np.sqrt(rho)*vec_dil)
         del vec_harm, vec_sol, vec_dil
-        
 
         self.get_and_write_statistics_to_file(rho,"rho")  # Is the file 'rho'?
         self.get_and_write_statistics_to_file(np.log(rho),"lnrho")
@@ -182,42 +181,48 @@ class FlowAnalysis:
         # Set up array of filter sizes
         delta_x = 1/self.res
         m = np.arange(1, self.res/2, 1)
+        print("M is: ", m)
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
 
-        # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
-        epsilon = np.zeros(len(k_lm), dtype=complex)
         momentum = rho * U
-        dim = newDistArray(self.FFT,rank=1)  
-        self.FT_momentum = newDistArray(self.FFT,rank=1)
-        self.FT_rho = newDistArray(self.FFT,rank=0)   
-        self.momentum_filtered = newDistArray(self.FFT,rank=1) 
-        self.rho_filtered = newDistArray(self.FFT,rank=0) 
+        epsilon = np.zeros(len(k_lm), dtype = complex)
         N = self.res * self.res * self.res
+        print("N is: ", N)
         
-        # Check ranks
-        my_rank = self.comm.Get_rank()
-        my_size = self.comm.Get_size()
-        print("Hello! I'm rank %d from %d running in total..." % (my_rank, my_size) )
-
-        # I based this section on line 150 of EnergyTransfer.py. Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
-        for i in range(3):
-            self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
-        
-        self.FT_rho = self.FFT.forward(rho, self.FT_rho)
-
-        # Calculate the cumulative spectrum (epsilon) for each filter length scale
         for i, k in enumerate(k_lm):
-            filter = self.res/(2*k)
+            print("Beginning new loop with filter: ", k)
+            # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
+            dim = newDistArray(self.FFT,rank=1)  
+            self.FT_momentum = self.momentum_filtered = newDistArray(self.FFT,rank=1)
+            self.FT_rho = self.rho_filtered = newDistArray(self.FFT,rank=0)   
+            # Check ranks
+            my_rank = self.comm.Get_rank()
+            my_size = self.comm.Get_size()
+            print("Hello! I'm rank %d from %d running in total..." % (my_rank, my_size) )
+
+            # Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
+            for i in range(3):
+                self.FT_momentum[i] = self.FFT.forward(momentum[i], self.FT_momentum[i])
+        
+            self.FT_rho = self.FFT.forward(rho, self.FT_rho)
+            print("FT_rho shape is: ", self.FT_rho.shape)
+            print("FT_momentum is: ", self.FT_momentum.shape)
+
+            # Calculate the cumulative spectrum (epsilon) for each filter length scale
+            filter = self.res/(2*k) # filter width (in grid cells) # *Try with int because of rounding issues?
+            print("Filter is: ", filter)
             FT_G = self.Kernel(filter)  
             self.rho_filtered = self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)
+            print("rho filtered is: ", self.rho_filtered)
             
             for j in range(3):    
-                self.momentum_filtered[j] = self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j]) 
+                self.momentum_filtered[j] = self.FFT.backward(FT_G * self.FT_momentum[j], self.momentum_filtered[j])
+                print("Momentum filtered [", j, "] is: ", self.momentum_filtered[j])
             
-            for k in range(3):
-                dim[k] = 0.5 * abs(self.momentum_filtered[k]**2) / abs(self.rho_filtered) 
+            for q in range(3):
+                dim[q] = 0.5 * abs(self.momentum_filtered[q]**2) / abs(self.rho_filtered) 
                 # creates an array of shape (256, 256, 256). This gets saved to one of the dimensions of dim.
                 # so dim[k] contains all the energies in all cells associated with dimension k
  
@@ -225,22 +230,33 @@ class FlowAnalysis:
             all_dims = np.sum(dim, axis = 0) 
             local_sum = np.sum(all_dims)
             total = self.comm.allreduce(local_sum)
+            print("Total shape is: ", total.shape, "\nTotal for k filter ", k, " is: ", total)
             epsilon[i] = total / N
 
         # Calculate the energy spectrum for each filter length scale (use equation 33)
         TotEnergy = np.zeros(len(k_lm)-1)
+        
+        # So, we start with TotEnergy[0] = epsilon[m=2] - epsilon[m=1], then do epsilon[m=3]-epsilon[m=2], and so on
+        # Ending with TotEnergy[125] = epsilon[m=127] - epsilon[m=126]
         for i in range(len(k_lm) - 1):
             TotEnergy[i] = epsilon[i+1] - epsilon[i]
+            print("epsilon[i+1] is: ", epsilon[i+1])
+            print("epsilon[i] is: ", epsilon[i])
             print("Total energy at position ", i, " is: ", TotEnergy[i])
             
+        # Make final m_bins (same as m but there's no m = 1, because that would require an m = 0)
+        # m_bins = np.arange(2, self.res/2, 1)
+        k_lm_bins = np.zeros(len(k_lm)-1)
+        k_lm_bins[:] = (k_lm[1:-1] - k_lm[0:-2]) / 2
+
         # Still need to output this spectrum somehow... see line 467 (?)
         # In line 492, they use self.k_bins and totPowFull
         # For me, everything is based off of k_lm
         # But I probably still want it to print to power spectrum over k_bins... right?
         if self.rank == 0:
             print("Printing outfiles")
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)), dtype='f')[0] = m
-            # Before, the above was k_lm, and then self.k_bins. Should we be plotting over bins, or over filters? (I think the filters are just for the calculations, and we don't use them after that)
+            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm_bins
+            # Before, the above was k_lm, and then self.k_bins. Should we be plotting over bins, or over filters? (I think the filters are just for the calculations, and we don't use them after that), and now it's k_lm_bins :P
             self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
 
         print("Finished Method B", file=sys.stderr)
@@ -352,8 +368,8 @@ class FlowAnalysis:
         print("In Kernel()")
 
         k = self.localKmag # array of wavenumbers # NO! WRONG!
-        KERNEL=self.kernel
-        pi=np.pi
+        KERNEL = self.kernel
+        pi = np.pi
         if factor is None:
             factor = 1 
         else:
@@ -384,7 +400,7 @@ class FlowAnalysis:
             localKern = np.ones_like(k)   # Set all kernels equal to 1 to start
             localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
             # Looks very different from eq. 2.44 and 2.45
-            # print("localKern (for KernelSharp) is: ", localKern)
+            print("localKern (for KernelSharp) is: ", localKern)
             return localKern
             # Returns localKern in real space
         elif KERNEL == "KernelGauss":   # Gaussian filter
