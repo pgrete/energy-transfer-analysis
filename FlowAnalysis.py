@@ -176,23 +176,23 @@ class FlowAnalysis:
         # Method B: equation 33 #
         #########################
         
-        print("In Method B")
+        # print("In Method B")
         
         # Set up array of filter sizes
         delta_x = 1/self.res
         m = np.arange(self.res/2 - 1, 0, -1)
-        print("M is: ", m)
+        # print("M is: ", m)
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm[:] = np.array(2*m[:]*delta_x)
         k_lm[:] = 1/lm[:]
-        print("K_lm is: ", k_lm)
+        # print("K_lm is: ", k_lm)
 
         momentum = rho * U
         epsilon = np.zeros(len(k_lm)) # Used dtype = complex
         N = self.res * self.res * self.res
         
         for i, k in enumerate(k_lm):
-            print("Beginning new loop with k: ", k)
+            # print("Beginning new loop with k: ", k)
             # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
             dim = newDistArray(self.FFT,False,rank=1)  
             self.FT_momentum = newDistArray(self.FFT,rank=1)
@@ -238,30 +238,27 @@ class FlowAnalysis:
         
         # So, we start with TotEnergy[0] = epsilon[m=2] - epsilon[m=1], then do epsilon[m=3]-epsilon[m=2], and so on
         # Ending with TotEnergy[125] = epsilon[m=127] - epsilon[m=126]
+        #for i in range(len(k_lm) - 1):
+        #    TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
         for i in range(len(k_lm) - 1):
             TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
             #print("epsilon[i+1] is: ", epsilon[i+1])
             #print("epsilon[i] is: ", epsilon[i])
             #print("Total energy at position ", i, " is: ", TotEnergy[i])
-            
-        # Make final m_bins (same as m but there's no m = 1, because that would require an m = 0)
-        k_lm_bins = np.zeros(len(k_lm)-1)
-        k_lm_bins[:] = (k_lm[0:-1] - k_lm[1:]) / 2 + k_lm[1:]
-        print("K_lm_bins is: ", k_lm_bins)
-
+        
         if self.rank == 0:
             # print("Printing outfiles")
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm_bins
-            self.outfile.require_dataset('TotEnergy/MethodB_PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
+            self.outfile.require_dataset('MethodB_TotEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
+            self.outfile.require_dataset('MethodB_TotEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
 
-        print("Finished Method B", file=sys.stderr)
+        # print("Finished Method B", file=sys.stderr)
 
         ###################
         # End of Method B #
         ###################
         
         if not self.has_b_fields:  # We don't have b fields... is this where we close?
-            print("In not self.has_b_fields")
+            # print("In not self.has_b_fields")
             if self.rank == 0:
                 self.outfile.close()
             return
