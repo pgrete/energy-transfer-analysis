@@ -80,7 +80,6 @@ class FlowAnalysis:
     
     def calculate_filtering_spectrum(self, kernel):
         
-        print("kernel in function is: ", kernel)
         # Set up array of filters
         delta_x = 1/self.res
         m = np.arange(self.res/2 - 1, 0, -1)
@@ -106,9 +105,9 @@ class FlowAnalysis:
             for j in range(3):
                 self.FT_momentum[j] = self.FFT.forward(momentum[j], self.FT_momentum[j]) 
             
-            filter_width = self.res/(2*k) 
-            print("Filter width is: ", filter_width, "\nm is: ", m)
-            FT_G = self.Kernel(filter, kernel)  # Calculate convolution kernel  
+            filter_width = self.res/(2*k)
+            print("filter_width type: ", type(filter_width))
+            FT_G = self.Kernel(filter_width, kernel)  # Calculate convolution kernel  
             self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
             
             for l in range(3):    
@@ -131,9 +130,9 @@ class FlowAnalysis:
             TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
                 
         if self.rank == 0:
-            self.outfile.require_dataset('Filtered_TotEnergy_' + kernel + '/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
-            self.outfile.require_dataset('Filtered_TotEnergy_' + kernel + '/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
-            self.outfile.require_dataset('Filtered_TotEnergy_' + kernel + 'Raw/Epsilon', (1,len(k_lm)), dtype='f')[0] = epsilon
+            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
+            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
+            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/Epsilon', (1,len(k_lm)), dtype='f')[0] = epsilon
         
 
     def run_analysis(self):  
@@ -325,40 +324,37 @@ class FlowAnalysis:
         k = self.localKmag
         pi = np.pi
         
-        print("DELTA is: ", DELTA, " with type ", type(DELTA))
-        print("self.res is: ", self.res, " with type ", type(self.res))
+        print("DELTA is: ", DELTA, " with type: ", type(DELTA))
+        print("int(DELTA) is: ", int(DELTA), " with type ", type(int(DELTA)))
+
         if factor is None:
             factor = 1 
         else:
             factor = np.int(factor)
         
-        if KERNEL == "KernelBox":   # Box or top hat filter
+        if KERNEL == "Box":   # aka top hat filter
             localKern = np.zeros((self.res,self.res,self.res))
-            for i in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):   
-                for j in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):    
-                    for k in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):
+            for i in range(-factor*int(DELTA)//2,factor*int(DELTA)//2+1):   
+                for j in range(-factor*int(DELTA)//2,factor*int(DELTA)//2+1):    
+                    for k in range(-factor*int(DELTA)//2,factor*int(DELTA)//2+1):
                         localFac = 1.   
-                        if np.abs(i) == factor*np.int(DELTA)/2: 
+                        if np.abs(i) == factor*int(DELTA)//2: 
                             localFac *= 0.5     
-                        if np.abs(j) == factor*np.int(DELTA)/2:
+                        if np.abs(j) == factor*int(DELTA)//2:
                             localFac *= 0.5                    
-                        if np.abs(k) == factor*np.int(DELTA)/2:
+                        if np.abs(k) == factor*int(DELTA)//2:
                             localFac *= 0.5 
                 
-            localKern[i,j,k] = localFac / float(factor*DELTA)**3.   
+            localKern[i,j,k] = localFac / float(factor*int(DELTA))**3   
             return fftn(localKern)   
             
-        elif KERNEL == "KernelSharp":   # Sharp filter
+        elif KERNEL == "Sharp":
             localKern = np.ones_like(k)   
             localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0. # Remove small scales
             return localKern
-        elif KERNEL == "KernelGauss":   # Gaussian filter
-            print("DELTA type: ", type(DELTA))
-            print("self.res type: ", type(self.res)
-            value = np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.) 
-            return value # Looks different from eq. 2.43
+        elif KERNEL == "Gauss": 
+            return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)
         else:
-            print("Unknown kernel was: ", KERNEL)
             sys.exit("Unknown kernel used")                                                                                                                       
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
