@@ -106,7 +106,6 @@ class FlowAnalysis:
                 self.FT_momentum[j] = self.FFT.forward(momentum[j], self.FT_momentum[j]) 
             
             filter_width = self.res/(2*k)
-            print("filter_width type: ", type(filter_width))
             FT_G = self.Kernel(filter_width, kernel)  # Calculate convolution kernel  
             self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
             
@@ -132,7 +131,7 @@ class FlowAnalysis:
         if self.rank == 0:
             self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
             self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
-            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/Epsilon', (1,len(k_lm)), dtype='f')[0] = epsilon
+            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/low_pass_energies', (1,len(k_lm)), dtype='f')[0] = epsilon
         
 
     def run_analysis(self):  
@@ -217,7 +216,7 @@ class FlowAnalysis:
 
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
-        if self.kernels: ### Fix this
+        if self.kernels:
             print("self.kernels= ", self.kernels)
             for kernel in self.kernels:
                 print("on kernel: ", kernel)
@@ -324,36 +323,36 @@ class FlowAnalysis:
         k = self.localKmag
         pi = np.pi
         
-        print("DELTA is: ", DELTA, " with type: ", type(DELTA))
-        print("int(DELTA) is: ", int(DELTA), " with type ", type(int(DELTA)))
-
         if factor is None:
             factor = 1 
         else:
             factor = np.int(factor)
         
+        # NOTE: Box Kernel needs to be updated for parallel computing (currently non-functional)
         if KERNEL == "Box":   # aka top hat filter
             localKern = np.zeros((self.res,self.res,self.res))
-            for i in range(-factor*int(DELTA)//2,factor*int(DELTA)//2+1):   
-                for j in range(-factor*int(DELTA)//2,factor*int(DELTA)//2+1):    
-                    for k in range(-factor*int(DELTA)//2,factor*int(DELTA)//2+1):
+            for i in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):   
+                for j in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):    
+                    for k in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):
                         localFac = 1.   
-                        if np.abs(i) == factor*int(DELTA)//2: 
+                        if np.abs(i) == factor*np.int(DELTA)//2: 
                             localFac *= 0.5     
-                        if np.abs(j) == factor*int(DELTA)//2:
+                        if np.abs(j) == factor*np.int(DELTA)//2:
                             localFac *= 0.5                    
-                        if np.abs(k) == factor*int(DELTA)//2:
+                        if np.abs(k) == factor*np.int(DELTA)//2:
                             localFac *= 0.5 
                 
-            localKern[i,j,k] = localFac / float(factor*int(DELTA))**3   
-            return fftn(localKern)   
-            
+            localKern[i,j,k] = localFac / float(factor*np.int(DELTA))**3.   
+            return fftn(localKern)
+
         elif KERNEL == "Sharp":
             localKern = np.ones_like(k)   
             localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0. # Remove small scales
             return localKern
+        
         elif KERNEL == "Gauss": 
             return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)
+        
         else:
             sys.exit("Unknown kernel used")                                                                                                                       
     def normalized_spectrum(self,k,quantity):
