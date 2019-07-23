@@ -10,12 +10,9 @@ from scipy.stats import binned_statistic
 from math import ceil
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIrotX
 
-# Aurora Cossairt's comments associated with command:
-# srun -n 8 --mem-per-cpu=10G python ~/src/energy-transfer-analysis/run_analysis.py --res 256 --data_path /mnt/research/compastro-REU/cossairt_simulation/a-1.00/id0/Turb.0010.vtk  --data_type Athena --type flow --eos isothermal -forced --outfile /mnt/research/compastro-REU/cossairt_simulation/a-1.00/0010.hdf5
-
 class FlowAnalysis:
     
-    def __init__(self, MPI, args, fields):  # We're doing some parallel programming!
+    def __init__(self, MPI, args, fields): 
         self.MPI = MPI
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
@@ -36,9 +33,9 @@ class FlowAnalysis:
         else:
             self.global_min_max = {}
 
-        self.rho = fields['rho']  # These are coming from the fields argument, which we gathered from args in run_analysis.py
-        self.U = fields['U']  # These variables are density, velocity, magnetic field, acceleration, pressure
-        self.B = fields['B']  # equation of state, adiabatic gamma index, and the existence of magnetic fields 
+        self.rho = fields['rho']  
+        self.U = fields['U']
+        self.B = fields['B'] 
         self.Acc = fields['Acc']
         self.P = fields['P']
 
@@ -46,32 +43,28 @@ class FlowAnalysis:
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
         
-        self.kernel = args['kernel']  # Added
-        
+        self.kernels= args['kernels']
+    
         if self.rank == 0:
             self.outfile_path = args['outfile']
 
-        # maximum integer wavenumber
-        k_max_int = ceil(self.res*0.5*np.sqrt(3.))   # How does this math work?
-        self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)  # Seems to imply how we split up the x axis according to wavenumbers (k's)?
-        print("K bins shape: ", self.k_bins.shape)
+        k_max_int = ceil(self.res*0.5*np.sqrt(3.)) 
+        self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1) 
         # if max k does not fall in last bin, remove last bin
         if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
             self.k_bins = self.k_bins[:-1]
 
         N = np.array([self.res,self.res,self.res], dtype=int)
         # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
-            # I think we use 2*pi because it makes the math convenient when working with wavenumbers
         L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
         self.FFT = PFFT(self.comm, N, axes=(0,1,2), collapse=False,
                         slab=True, dtype=np.complex128)
 
-        self.localK = get_local_wavenumbermesh(self.FFT, L)  # Use FFT to define each k value along the x axis (?)
+        self.localK = get_local_wavenumbermesh(self.FFT, L) 
         self.localKmag = np.linalg.norm(self.localK,axis=0)  
 
-        self.localKunit = np.copy(self.localK)  # Not sure what this means...
+        self.localKunit = np.copy(self.localK)
         # fixing division by 0 for harmonic part
-            # What's the "harmonic part"?
         if self.rank == 0:
             if self.localKmag[0,0,0] == 0.:
                 self.localKmag[0,0,0] = 1.
@@ -85,7 +78,65 @@ class FlowAnalysis:
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
     
-    def run_analysis(self):  # This looks like the actual running analysis part!
+    def calculate_filtering_spectrum(self, kernel):
+        
+        print("kernel in function is: ", kernel)
+        # Set up array of filters
+        delta_x = 1/self.res
+        m = np.arange(self.res/2 - 1, 0, -1)
+        k_lm = lm = np.zeros(int(self.res/2)-1)
+        lm[:] = np.array(2*m[:]*delta_x)
+        k_lm[:] = 1/lm[:]
+
+        momentum = self.rho * self.U
+        epsilon = np.zeros(len(k_lm))
+        N = self.res * self.res * self.res
+        
+        for i, k in enumerate(k_lm):
+            # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
+            dim = newDistArray(self.FFT,False,rank=1)  
+            self.FT_momentum = newDistArray(self.FFT,rank=1)
+            self.momentum_filtered = newDistArray(self.FFT,False,rank=1)
+            self.FT_rho = newDistArray(self.FFT,rank=0)   
+            self.rho_filtered = newDistArray(self.FFT,False,rank=0) 
+            
+            # Calculate the cumulative spectrum (epsilon) for each filter length scale
+            # (See equations 27 and 6 of Sadek and Aluie)
+            self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
+            for j in range(3):
+                self.FT_momentum[j] = self.FFT.forward(momentum[j], self.FT_momentum[j]) 
+            
+            filter_width = self.res/(2*k) 
+            print("Filter width is: ", filter_width, "\nm is: ", m)
+            FT_G = self.Kernel(filter, kernel)  # Calculate convolution kernel  
+            self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
+            
+            for l in range(3):    
+                self.momentum_filtered[l] = (self.FFT.backward(FT_G * self.FT_momentum[l], self.momentum_filtered[l])).real
+            
+            # Compute the average
+            for m in range(3):
+                dim[m] = 0.5 * abs(self.momentum_filtered[m]**2) / abs(self.rho_filtered) 
+                # energy in each cell by dimension (shape 3 x 256 x 256 x 256)
+ 
+            all_dims = np.sum(dim, axis = 0) # total energy in each cell (shape 256 x 256 x 256)
+            local_sum = np.sum(all_dims)
+            total = (self.comm.allreduce(local_sum)).real # total energy for all cells (scalar value)
+            epsilon[i] = total / N # Average energy
+            
+        # Calculate the energy spectrum for each filter length scale (see equation 33 of Sadek and Aluie)
+        TotEnergy = np.zeros(len(k_lm)-1)
+        
+        for i in range(len(k_lm) - 1):
+            TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
+                
+        if self.rank == 0:
+            self.outfile.require_dataset('Filtered_TotEnergy_' + kernel + '/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
+            self.outfile.require_dataset('Filtered_TotEnergy_' + kernel + '/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
+            self.outfile.require_dataset('Filtered_TotEnergy_' + kernel + 'Raw/Epsilon', (1,len(k_lm)), dtype='f')[0] = epsilon
+        
+
+    def run_analysis(self):  
         
         rho = self.rho
         U = self.U
@@ -107,21 +158,18 @@ class FlowAnalysis:
         self.vector_power_spectrum('rhou_c',np.sqrt(rho)*vec_dil)
         del vec_harm, vec_sol, vec_dil
 
-        self.get_and_write_statistics_to_file(rho,"rho")  # Is the file 'rho'?
+        self.get_and_write_statistics_to_file(rho,"rho")
         self.get_and_write_statistics_to_file(np.log(rho),"lnrho")
-        self.scalar_power_spectrum('rho',rho)   # Ok, so this one is a scalar because doesn't contain 'U'?
+        self.scalar_power_spectrum('rho',rho)
         self.scalar_power_spectrum('lnrho',np.log(rho))
 
-        V2 = np.sum(U**2.,axis=0)   # That looks like Kinetic Energy (basically)
-        self.get_and_write_statistics_to_file(np.sqrt(V2),"u")  # That looks like velocity
+        V2 = np.sum(U**2.,axis=0)
+        self.get_and_write_statistics_to_file(np.sqrt(V2),"u")
 
-        self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")  # KinEn # Does this do this for each rho?
-        self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")  # What is KE specific
-
-        print("Finished KinEnSpecific")
+        self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")
+        self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")
 
         if Acc is not None:
-            print("In Acc is not None")
 
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
             self.get_and_write_statistics_to_file(Amag,"a")
@@ -131,9 +179,9 @@ class FlowAnalysis:
             if self.rank == 0:
                 self.outfile.require_dataset('U-A/corr', (1,), dtype='f')[0] = corrUA
             
-            UHarm, USol, UDil = self.decompose_vector(U)  # We called these when calculating mean spectra?
+            UHarm, USol, UDil = self.decompose_vector(U)
             self.get_and_write_statistics_to_file(
-                np.sum(Acc*U,axis=0)/(  # Acceleration times u (propogation speed?) What does that mean?
+                np.sum(Acc*U,axis=0)/(
                     np.linalg.norm(Acc,axis=0)*np.linalg.norm(U,axis=0)),"Angle_u_a")
             self.get_and_write_statistics_to_file(
                 np.sum(Acc*USol,axis=0)/(
@@ -145,8 +193,6 @@ class FlowAnalysis:
         DivU = MPIdivX(self.comm,U)
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
         self.get_and_write_statistics_to_file(np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0)),"AbsRotU")
-
-        print("Just wrote statistics for AbsRotU")
 
         if self.eos == 'adiabatic':
             self.gamma = self.gamma
@@ -172,101 +218,20 @@ class FlowAnalysis:
 
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
-        #########################
-        # Method B: equation 33 #
-        #########################
+        if self.kernels: ### Fix this
+            print("self.kernels= ", self.kernels)
+            for kernel in self.kernels:
+                print("on kernel: ", kernel)
+                self.calculate_filtering_spectrum(kernel)
         
-        # print("In Method B")
-        
-        # Set up array of filter sizes
-        delta_x = 1/self.res
-        m = np.arange(self.res/2 - 1, 0, -1)
-        # print("M is: ", m)
-        k_lm = lm = np.zeros(int(self.res/2)-1)
-        lm[:] = np.array(2*m[:]*delta_x)
-        k_lm[:] = 1/lm[:]
-        # print("K_lm is: ", k_lm)
-
-        momentum = rho * U
-        epsilon = np.zeros(len(k_lm)) # Used dtype = complex
-        N = self.res * self.res * self.res
-        
-        for i, k in enumerate(k_lm):
-            # print("Beginning new loop with k: ", k)
-            # Set up for calculating cumulative spectrum (epsilon) for each filter length scale
-            dim = newDistArray(self.FFT,False,rank=1)  
-            self.FT_momentum = newDistArray(self.FFT,rank=1)
-            self.momentum_filtered = newDistArray(self.FFT,False,rank=1)
-            self.FT_rho = newDistArray(self.FFT,rank=0)   
-            self.rho_filtered = newDistArray(self.FFT,False,rank=0) 
-            
-            # Check ranks
-            my_rank = self.comm.Get_rank()
-            my_size = self.comm.Get_size()
-
-            # Momentum has to be put through a loop to account for each of its three components (x, y, and z). See line 141 for an example.
-            for j in range(3):
-                self.FT_momentum[j] = self.FFT.forward(momentum[j], self.FT_momentum[j])
-        
-            self.FT_rho = self.FFT.forward(rho, self.FT_rho)
-            
-            # Calculate the cumulative spectrum (epsilon) for each filter length scale
-            filter = self.res/(2*k) # Shouldn't this be an integer?
-            # print("Filter is: ", filter, " on rank %d" % my_rank)
-            FT_G = self.Kernel(filter)  
-            self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
-            
-            for l in range(3):    
-                self.momentum_filtered[l] = (self.FFT.backward(FT_G * self.FT_momentum[l], self.momentum_filtered[l])).real
-            
-            for m in range(3):
-                dim[m] = 0.5 * abs(self.momentum_filtered[m]**2) / abs(self.rho_filtered) 
-                # creates an array of shape (256, 256, 256). This gets saved to one of the dimensions of dim.
-                # so dim[k] contains all the energies in all cells associated with dimension k
- 
-            # Adds up the energies of all dimensions. Result is still an array of shape (256, 256, 256)
-            all_dims = np.sum(dim, axis = 0) 
-            local_sum = np.sum(all_dims)
-            total = (self.comm.allreduce(local_sum)).real
-            # print("\nTotal for k ", k, " is: ", total, " on rank %d: " % my_rank)
-            epsilon[i] = total / N
-            # print("Epsilon[", i, "] is: ", epsilon[i], " on rank %d: " % my_rank)
-
-        # Calculate the energy spectrum for each filter length scale (use equation 33)
-        # print("Epsilon outside the for loop is: ", epsilon[:], " on rank %d " % my_rank)
-        TotEnergy = np.zeros(len(k_lm)-1)
-        
-        # So, we start with TotEnergy[0] = epsilon[m=2] - epsilon[m=1], then do epsilon[m=3]-epsilon[m=2], and so on
-        # Ending with TotEnergy[125] = epsilon[m=127] - epsilon[m=126]
-        #for i in range(len(k_lm) - 1):
-        #    TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
-        for i in range(len(k_lm) - 1):
-            TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
-            #print("epsilon[i+1] is: ", epsilon[i+1])
-            #print("epsilon[i] is: ", epsilon[i])
-            #print("Total energy at position ", i, " is: ", TotEnergy[i])
-        
-        if self.rank == 0:
-            # print("Printing outfiles")
-            self.outfile.require_dataset('MethodB_TotEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
-            self.outfile.require_dataset('MethodB_TotEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
-
-        # print("Finished Method B", file=sys.stderr)
-
-        ###################
-        # End of Method B #
-        ###################
-        
-        if not self.has_b_fields:  # We don't have b fields... is this where we close?
-            # print("In not self.has_b_fields")
+        if not self.has_b_fields:
             if self.rank == 0:
                 self.outfile.close()
             return
 
-        B2 = np.sum(B**2.,axis=0)  # Eyy it's some magnetic pressure! (or magnetic energy? idk...)
-
-        self.get_and_write_statistics_to_file(np.sqrt(B2),"B")  # seems like there's a lot contained in these files
-        self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity") # There's magnetic energy density:)
+        B2 = np.sum(B**2.,axis=0) 
+        self.get_and_write_statistics_to_file(np.sqrt(B2),"B")
+        self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity")
 
         if self.eos == 'adiabatic':
             TotPres = P + B2/2.
@@ -275,13 +240,13 @@ class FlowAnalysis:
             self.get_2d_hist('P-MagEnDensity',P,0.5 * B2)
             
             plasmaBeta = 2.* P / B2
-        elif self.eos == 'isothermal':  # That's us!
+        elif self.eos == 'isothermal':
             if self.rank == 0:
                 print('Warning: assuming c_s = 1 for isothermal EOS')
-            TotPres = rho + B2/2.  # Why is this math true?
+            TotPres = rho + B2/2.
             corrPBcomp = self.get_corr_coeff(rho,np.sqrt(B2)/rho**(2./3.))
             
-            plasmaBeta = 2.*rho/B2   # Ratio of gas pressure to magnetic pressure
+            plasmaBeta = 2.*rho/B2
         else:
             raise SystemExit('Unknown EOS', self.eos)
 
@@ -293,18 +258,18 @@ class FlowAnalysis:
             self.outfile.require_dataset('P-Bcomp/corr', (1,), dtype='f')[0] = corrPBcomp
 
         AlfMach2 = V2*rho/B2
-        AlfMach = np.sqrt(AlfMach2)  # Ratio of characteristic velocity to isothermal speed of sound
+        AlfMach = np.sqrt(AlfMach2) 
 
         self.get_and_write_statistics_to_file(AlfMach,"AlfvenicMach")
 
-        self.vector_power_spectrum('B',B)  # What does this vector_power_spectrum() actually do?
+        self.vector_power_spectrum('B',B)  
 
         # this is cheap... and only works for slab decomp on x-axis
         # np.sum is required for slabs with width > 1
-        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:   # What's this negative indexing??
+        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:   
             raise SystemExit('Calculation of dispersion measures only works for slabs')
 
-        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)  # What is DM and RM? Maybe domain?
+        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)
         RM = self.comm.allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
         chunkSize = int(self.res/self.size)
         endIdx = int((self.rank + 1) * chunkSize)
@@ -345,52 +310,56 @@ class FlowAnalysis:
         self.get_2d_hist('rho-B',rho,np.sqrt(B2))
         self.get_2d_hist('log10rho-B',np.log10(rho),np.sqrt(B2))
 
-
         if self.rank == 0:
             self.outfile.close()
 
-    def Kernel(self,DELTA,factor=None):
-    # This function creates G^hat_l (the convolution kernel for a particular filtering scale)
-        """generate filter kernels
-        KERNEL - type of kernel to be used   # Need to read this in as an argument?
-        RES    - linear numerical resolution    # Replaced with self.res
-        DELTA  - filter width (in grid cells)   # This is 'l', the filtering scale (aka spatial cutoff length)
+    def Kernel(self,DELTA,KERNEL,factor=None):
+        """
+        This function creates the convolution kernel for use with a particular filtering scale
+        (see equation 6 of "Extracting the spectrum of a flow by spatial filtering" by Sadek and Aluie)
+        For an introduction to scale filtering, see chapter 2 of "Large Eddy Simulation for Incompressible Flows" by Pierre Sagaut. These three classical filters are described in section 1.5 of that chapter.
+        KERNEL - the chosen type of convolution kernel (Box, Sharp, or Gaussian)
+        DELTA  - filter width (in grid cells): filter_width = self.res/(2k) where k is the wavenumber associated with the filter. 
         factor - (optional) multiplicative factor of the filter width
-                                            """                                        
-        k = self.localKmag # array of wavenumbers # NO! WRONG!
-        KERNEL = self.kernel
+        """                                        
+        k = self.localKmag
         pi = np.pi
+        
+        print("DELTA is: ", DELTA, " with type ", type(DELTA))
+        print("self.res is: ", self.res, " with type ", type(self.res))
         if factor is None:
             factor = 1 
         else:
             factor = np.int(factor)
         
         if KERNEL == "KernelBox":   # Box or top hat filter
-            localKern = np.zeros((self.res,self.res,self.res))  # Create a cube with dimensions of resolution (initialize with zeros)
-            for i in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):   # These are all the same
-                for j in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):    # Fill in the 3D box
+            localKern = np.zeros((self.res,self.res,self.res))
+            for i in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):   
+                for j in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):    
                     for k in range(-factor*np.int(DELTA)/2,factor*np.int(DELTA)/2+1):
-                        localFac = 1.   # Every localFac gets set to 1
-                        # Changed to 0.5 if this condition is met (magnitude of step is 1/2 filter width times factor)
+                        localFac = 1.   
                         if np.abs(i) == factor*np.int(DELTA)/2: 
-                            localFac *= 0.5     # What is this localFac?
+                            localFac *= 0.5     
                         if np.abs(j) == factor*np.int(DELTA)/2:
                             localFac *= 0.5                    
                         if np.abs(k) == factor*np.int(DELTA)/2:
                             localFac *= 0.5 
-                    
-            localKern[i,j,k] = localFac / float(factor*DELTA)**3.   # What is localKern?
-            return fftn(localKern)   # Appears to be using a Fast Fourier Transform? What is this `function fftn()`?
+                
+            localKern[i,j,k] = localFac / float(factor*DELTA)**3.   
+            return fftn(localKern)   
             
-        elif KERNEL == "KernelSharp":
-            localKern = np.ones_like(k)   # Set all kernels equal to 1 to start
-            localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0.  # Change kernels to zero if k > k_c (getting rid of small scales)
+        elif KERNEL == "KernelSharp":   # Sharp filter
+            localKern = np.ones_like(k)   
+            localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0. # Remove small scales
             return localKern
         elif KERNEL == "KernelGauss":   # Gaussian filter
-            return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)  # Looks different from eq. 2.43
-            
+            print("DELTA type: ", type(DELTA))
+            print("self.res type: ", type(self.res)
+            value = np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.) 
+            return value # Looks different from eq. 2.43
         else:
-            sys.exit("Unknown kernel used")                                                                                                                                                                                                     
+            print("Unknown kernel was: ", KERNEL)
+            sys.exit("Unknown kernel used")                                                                                                                       
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
         """
