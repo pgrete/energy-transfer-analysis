@@ -356,13 +356,13 @@ class FlowAnalysis:
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
         """
-        histSum = binned_statistic(k,quantity,bins=self.k_bins,statistic='sum')[0]  # What is binned_statistic?
+        histSum = binned_statistic(k,quantity,bins=self.k_bins,statistic='sum')[0]
         kSum = binned_statistic(k,k,bins=self.k_bins,statistic='sum')[0]
         histCount = np.histogram(k,bins=self.k_bins)[0]
 
         totalHistSum = self.comm.reduce(histSum.astype(np.float64))
         totalKSum = self.comm.reduce(kSum.astype(np.float64))
-        totalHistCount = self.comm.reduce(histCount.astype(np.float64))  # how many histograms to make?
+        totalHistCount = self.comm.reduce(histCount.astype(np.float64))
 
         if self.rank == 0:
 
@@ -438,13 +438,13 @@ class FlowAnalysis:
         # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
         harm = total / (N/3)
 
-        dil = self.get_rotation_free_vec_field(vec) # Here is harm dil and sol!
+        dil = self.get_rotation_free_vec_field(vec)
         sol = vec - harm.reshape((3,1,1,1)) - dil
 
         return harm, sol, dil
 
 
-    def scalar_power_spectrum(self,name,field):  # Oh hey! This is one of the things!
+    def scalar_power_spectrum(self,name,field):
 
         FT_field = newDistArray(self.FFT)
         FT_field = self.FFT.forward(field, FT_field)
@@ -452,9 +452,9 @@ class FlowAnalysis:
         FT_fieldAbs2 = np.abs(FT_field)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_fieldAbs2.reshape(-1))
 
-        if self.rank == 0: # This appears to be where we're writing files
+        if self.rank == 0:
             self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
-            self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full  # What does this function return?
+            self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
 
 # e.g. (38) in https://arxiv.org/pdf/1101.0150.pdf
     def co_spectrum(self,name,fieldA,fieldB):
@@ -474,10 +474,10 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/CoSpec/Abs', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Abs
             self.outfile.require_dataset(name + '/CoSpec/Real', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Real
 
-    def vector_power_spectrum(self, name, vec):  # Eyyy there it is
+    def vector_power_spectrum(self, name, vec):
         FT_vec = newDistArray(self.FFT,rank=1)
         for i in range(3):
-            FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])  # Does exactly the same thing as scalar, but for all components of an array
+            FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])
 
         FT_vecAbs2 = np.linalg.norm(FT_vec,axis=0)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_vecAbs2.reshape(-1))
@@ -492,7 +492,7 @@ class FlowAnalysis:
         # project components
         localVecDotKunit = np.sum(FT_vec*self.localKunit,axis = 0)
 
-        FT_Dil = localVecDotKunit * self.localKunit  # Still have no idea what "Dil" and "Sol" mean
+        FT_Dil = localVecDotKunit * self.localKunit
         FT_DilAbs2 = np.linalg.norm(FT_Dil,axis=0)**2.
         PS_Dil = self.normalized_spectrum(self.localKmag.reshape(-1),FT_DilAbs2.reshape(-1))
         
@@ -509,7 +509,7 @@ class FlowAnalysis:
         totPowSol = self.comm.allreduce(np.sum(FT_SolAbs2))
         totPowHarm = np.linalg.norm(FT_vec[:,0,0,0],axis=0)**2.
 
-        if self.rank == 0:  # Is this where it actually makes the hd5f file?
+        if self.rank == 0:
             self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
             self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
             self.outfile.require_dataset(name + '/PowSpec/Dil', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Dil
@@ -518,16 +518,14 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/PowSpec/TotDil', (1,), dtype='f')[0] = totPowDil
             self.outfile.require_dataset(name + '/PowSpec/TotHarm', (1,), dtype='f')[0] = totPowHarm
 
-
-
-    def get_and_write_statistics_to_file(self,field,name,bounds=None):  # Aha! Explains field
+    def get_and_write_statistics_to_file(self,field,name,bounds=None):
         """
             field - 3d scalar field to get statistics from  
             name - human readable name of the field
             bounds - tuple, lower and upper bound for histogram, if None then min/max
         """
         
-        N = float(self.comm.allreduce(field.size))  # some nice statistical outputs
+        N = float(self.comm.allreduce(field.size))
         total = self.comm.allreduce(np.sum(field))
         mean = total / N
 
@@ -548,7 +546,7 @@ class FlowAnalysis:
         globAbsMin = self.comm.allreduce(np.min(np.abs(field)),op=self.MPI.MIN)
         globAbsMax = self.comm.allreduce(np.max(np.abs(field)),op=self.MPI.MAX)
 
-        if self.rank == 0:  # First node (santa) saves all the means, rms's, other statistical children
+        if self.rank == 0:
             self.outfile.require_dataset(name + '/moments/mean', (1,), dtype='f')[0] = mean
             self.outfile.require_dataset(name + '/moments/rms', (1,), dtype='f')[0] = rms
             self.outfile.require_dataset(name + '/moments/var', (1,), dtype='f')[0] = var
@@ -567,7 +565,7 @@ class FlowAnalysis:
             HistBins = "Sim"
 
         Bins = np.linspace(bounds[0],bounds[1],129)
-        hist = np.histogram(field.reshape(-1),bins=Bins)[0]  # Histograms?
+        hist = np.histogram(field.reshape(-1),bins=Bins)[0]
         totalHist = self.comm.allreduce(hist)
 
         if self.rank == 0:
@@ -600,7 +598,7 @@ class FlowAnalysis:
 
         return cov / (stdX*stdY)
 
-    def get_2d_hist(self,name,X,Y,bounds = None):  # Getting a 2D hist?
+    def get_2d_hist(self,name,X,Y,bounds = None):
         if bounds is None:
             globXMin = self.comm.allreduce(np.min(X),op=self.MPI.MIN)
             globXMax = self.comm.allreduce(np.max(X),op=self.MPI.MAX)
@@ -614,8 +612,8 @@ class FlowAnalysis:
             HistBins = "Sim"
         
         
-        XBins = np.linspace(bounds[0][0],bounds[0][1],129)  # Why 129?
-        YBins = np.linspace(bounds[1][0],bounds[1][1],129)  # Why upside down?
+        XBins = np.linspace(bounds[0][0],bounds[0][1],129)
+        YBins = np.linspace(bounds[1][0],bounds[1][1],129)
 
         hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
         totalHist = self.comm.allreduce(hist)
