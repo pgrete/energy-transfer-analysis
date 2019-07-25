@@ -341,15 +341,12 @@ class FlowAnalysis:
                 
             localKern[i,j,k] = localFac / float(factor*np.int(DELTA))**3.
             return fftn(localKern)
-
         elif KERNEL == "Sharp":
             localKern = np.ones_like(k)
             localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0. # Remove small scales
             return localKern
-        
         elif KERNEL == "Gauss":
             return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)
-        
         else:
             sys.exit("Unknown kernel used")
 
