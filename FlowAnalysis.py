@@ -372,7 +372,6 @@ class FlowAnalysis:
             # this help to overcome statistics for low k bins
             centeredK = totalKSum / totalHistCount
 
-
             # calculate corresponding k to to bin
             # this help to overcome statistics for low k bins
             centeredK = totalKSum / totalHistCount
@@ -606,8 +605,7 @@ class FlowAnalysis:
             HistBins = "Snap"
         else:
             HistBins = "Sim"
-        
-        
+                
         XBins = np.linspace(bounds[0][0],bounds[0][1],129)
         YBins = np.linspace(bounds[1][0],bounds[1][1],129)
 
@@ -617,6 +615,18 @@ class FlowAnalysis:
         if self.rank == 0:
             tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
             tmp[0] = XBins
+            tmp[1] = YBins
+            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
+            tmp[:,:] = totalHist.astype(float)
+
+        Xname, Yname = name.split('-')
+        if Xname in self.global_min_max.keys() and Yname in self.global_min_max.keys():
+            XBins = np.linspace(self.global_min_max[Xname][0],self.global_min_max[Xname][1],129)
+            YBins = np.linspace(self.global_min_max[Yname][0],self.global_min_max[Yname][1],129)
+
+            hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
+            totalHist = self.comm.allreduce(hist)
+
             HistBins = 'globalMinMax'
 
             if self.rank == 0:
@@ -644,7 +654,4 @@ class FlowAnalysis:
         msg = "compressive part is not rotation free"
         assert np.sum(np.linalg.norm(MPIrotX(self.comm, vec_dil),axis=0))/vec_dil.size/3 < 1e-13, msg
 
-
-        
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4 ai
-
