@@ -337,8 +337,7 @@ class FlowAnalysis:
                         if np.abs(j) == factor*np.int(DELTA)//2:
                             localFac *= 0.5
                         if np.abs(k) == factor*np.int(DELTA)//2:
-                            localFac *= 0.5
-                
+                            localFac *= 0.5 
             localKern[i,j,k] = localFac / float(factor*np.int(DELTA))**3.
             return fftn(localKern)
         elif KERNEL == "Sharp":
