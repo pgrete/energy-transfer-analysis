@@ -42,7 +42,7 @@ In general the following parameters are available
    - `lin` leads to linearly equally spaced bins with boundaries at $k = 0.5,1.5,2.5,...,Res/2$
    - `log` leads to logarithmically equally spaced bins with boundaries at $k = 0, 4 * 2^{(i - 1)/4},Res/2$
    - `test` leads to bins used for regression testing, i.e. $k = 0.5,1.5,2.5,16.0,26.5,28.5,32.0$
-
+-  `--kernels`	choose one or more convolution kernel types to be used in filtering
 
 
 ## Energy transfer analysis
@@ -52,7 +52,7 @@ In general the following parameters are available
 Use the `run_analysis.py` script with the `--flow transfer` option.
 For example (to run the transfer analysis on the regression data set),
 ```
-srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test-out.pkl --eos adiabatic --gamma 1.0001  -forced -b
+srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test-out.pkl --eos adiabatic --gamma 1.0001  -forced -b --kernels Gauss
 ```
 
 ## Turbulent flow analysis
@@ -68,6 +68,10 @@ srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --dat
 - Power spectra
   - for total, solenoidal and compressive components
   - with different normalization: no weighting, surface average, shell average
+  - with different definitions of kinetic energy density
+    - $E(k) = \sqrt(\rho u)^2$ (Grete, et al., 2017)
+    - $E(k) = |\overline{\rho u_l}|^2 / 2\rho_l$ (Sadek & Aluie, 2018)
+       - must specify convolution kernel type with `--kernel`
 - Dispersion measures, rotation measures and line of sight magnetic field along all axes
 
 ## Usage

@@ -92,11 +92,11 @@ parser.add_argument('--binning',
                     help='set binning used in energy transfer analysis')
 
 
-parser.add_argument('--kernel',
+parser.add_argument('--kernels',
                     default=None,
                     type=str,
-                    choices=['KernelBox', 'KernelSharp', 'KernelGauss'],
-                    help='choose convolution kernel type')
+		    nargs='+',
+                    help='choose convolution kernel type(s): Box, Sharp, or Gauss')
 
 args = vars(parser.parse_args())
 
