@@ -86,7 +86,7 @@ class FlowAnalysis:
         delta_x = 1/self.res
         m = np.arange(self.res/2 - 1, 0, -1) # array of integer number of grid cells (see Sadek and Aluie eqn. 31)
         k_lm = lm = np.zeros(int(self.res/2)-1)
-        lm = np.array(2*m*delta_x) # array grid cell lengths (see Sadek and Aluie eqn. 31)
+        lm = np.array(2*m*delta_x) # array of length scales (see Sadek and Aluie eqn. 31)
         k_lm = 1/lm # array of wavenumbers (see Sadek and Aluie eqn. 32)
 
         momentum = self.rho * self.U
