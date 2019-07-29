@@ -519,7 +519,7 @@ class FlowAnalysis:
             field - 3d scalar field to get statistics from
             name - human readable name of the field
             bounds - tuple, lower and upper bound for histogram, if None then min/max
-        """ 
+        """
 
         N = float(self.comm.allreduce(field.size))
         total = self.comm.allreduce(np.sum(field))
