@@ -42,7 +42,7 @@ In general the following parameters are available
    - `lin` leads to linearly equally spaced bins with boundaries at $k = 0.5,1.5,2.5,...,Res/2$
    - `log` leads to logarithmically equally spaced bins with boundaries at $k = 0, 4 * 2^{(i - 1)/4},Res/2$
    - `test` leads to bins used for regression testing, i.e. $k = 0.5,1.5,2.5,16.0,26.5,28.5,32.0$
--  `--kernels`	choose one or more convolution kernel types to be used in filtering
+-  `--kernels`	choose one or more convolution kernel types to be used in filtering (current options: Top Hat/Box Kernel, Sharp Kernel, Gaussian Kernel)
 
 
 ## Energy transfer analysis

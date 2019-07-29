@@ -38,7 +38,6 @@ class FlowAnalysis:
         self.B = fields['B']
         self.Acc = fields['Acc']
         self.P = fields['P']
-
         self.eos = args['eos']
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
@@ -47,6 +46,7 @@ class FlowAnalysis:
         if self.rank == 0:
             self.outfile_path = args['outfile']
 
+        # maximum integer wavenumber
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))
         self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)
         # if max k does not fall in last bin, remove last bin
@@ -78,13 +78,16 @@ class FlowAnalysis:
             self.localKmag[0,0,0] = 0.
     
     def calculate_filtering_spectrum(self, kernel):
-    # following Sadek and Aluie (2018) for calculating filtered power spectrum of kinetic energy
+    """
+    following Sadek and Aluie (2018) for calculating filtered power spectrum of kinetic energy
+    kernel - one or more of the following kernel types selected by the user: Box, Gauss, Sharp
+    """
         # set up array of filters
         delta_x = 1/self.res
-        m = np.arange(self.res/2 - 1, 0, -1)
+        m = np.arange(self.res/2 - 1, 0, -1) # array of integer number of grid cells (see Sadek and Aluie eqn. 31)
         k_lm = lm = np.zeros(int(self.res/2)-1)
-        lm[:] = np.array(2*m[:]*delta_x)
-        k_lm[:] = 1/lm[:]
+        lm = np.array(2*m*delta_x) # array grid cell lengths (see Sadek and Aluie eqn. 31)
+        k_lm = 1/lm # array of wavenumbers (see Sadek and Aluie eqn. 32)
 
         momentum = self.rho * self.U
         epsilon = np.zeros(len(k_lm))
@@ -92,34 +95,35 @@ class FlowAnalysis:
         
         for i, k in enumerate(k_lm):
             # set up for calculating cumulative spectrum (epsilon) for each filter length scale
-            dim = newDistArray(self.FFT,False,rank=1)
-            self.FT_momentum = newDistArray(self.FFT,rank=1)
-            self.momentum_filtered = newDistArray(self.FFT,False,rank=1)
-            self.FT_rho = newDistArray(self.FFT,rank=0)
-            self.rho_filtered = newDistArray(self.FFT,False,rank=0)
+            energy = newDistArray(self.FFT,False,rank=1)
+            FT_momentum = newDistArray(self.FFT,rank=1)
+            momentum_filtered = newDistArray(self.FFT,False,rank=1)
+            FT_rho = newDistArray(FFT,rank=0)
+            rho_filtered = newDistArray(FFT,False,rank=0)
 
             # calculate the cumulative spectrum (epsilon) for each filter length scale
             # (see equations 27 and 6 of Sadek and Aluie)
-            self.FT_rho = self.FFT.forward(self.rho, self.FT_rho)
+            FT_rho = FFT.forward(self.rho, FT_rho)
             for j in range(3):
-                self.FT_momentum[j] = self.FFT.forward(momentum[j], self.FT_momentum[j])
+                FT_momentum[j] = FFT.forward(momentum[j], FT_momentum[j])
             
             filter_width = self.res/(2*k)
             FT_G = self.Kernel(filter_width, kernel)  # calculate convolution kernel
             # calculate filtered values of momentum and density
-            self.rho_filtered = (self.FFT.backward(FT_G * self.FT_rho, self.rho_filtered)).real
-            for l in range(3):
-                self.momentum_filtered[l] = (self.FFT.backward(FT_G * self.FT_momentum[l], self.momentum_filtered[l])).real
+            rho_filtered = (self.FFT.backward(FT_G * FT_rho, rho_filtered)).real
+            for j in range(3):
+                momentum_filtered[j] = (self.FFT.backward(FT_G * FT_momentum[j], momentum_filtered[j])).real
             
             # compute the average of momentum^2 / density
-            for m in range(3):
-                dim[m] = 0.5 * abs(self.momentum_filtered[m]**2) / abs(self.rho_filtered)
+            for j in range(3):
                 # energy in each cell associated with each dimension (shape: 3 x res x res x res)
- 
-            all_dims = np.sum(dim, axis = 0) # total energy in each cell (sum of energies of each dimension) (shape: res x res x res)
-            local_sum = np.sum(all_dims)
-            total = (self.comm.allreduce(local_sum)).real # total energy for all cells (scalar value)
-            epsilon[i] = total / N # average energy
+                energy_by_dim[j] = 0.5 * abs(momentum_filtered[j]**2) / abs(rho_filtered)
+            # total energy in each cell (sum of energies of each dimension) (shape: res x res x res)
+            energy_per_cell = np.sum(energy_by_dim, axis = 0)
+            # total energy for all cells (scalar value) local_sum = np.sum(energy_per_cell)
+            total_energy = (self.comm.allreduce(local_sum)).real
+            # average energy
+            epsilon[i] = total_energy / N
             
         # calculate the energy spectrum for each filter length scale (see equation 33 of Sadek and Aluie)
         TotEnergy = np.zeros(len(k_lm)-1)
@@ -214,7 +218,7 @@ class FlowAnalysis:
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
         if self.kernels:
-            print("self.kernels= ", self.kernels)
+            print("Using the following kernels for the filtering spectrum: ", self.kernels)
             for kernel in self.kernels:
                 print("on kernel: ", kernel)
                 self.calculate_filtering_spectrum(kernel)
@@ -327,6 +331,7 @@ class FlowAnalysis:
         
         # NOTE: Box Kernel needs to be updated for parallel computing (currently non-functional)
         if KERNEL == "Box":   # aka top hat filter
+            sys.exit("Box kernel is currently non-functional")
             localKern = np.zeros((self.res,self.res,self.res))
             for i in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):
                 for j in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):
@@ -367,10 +372,6 @@ class FlowAnalysis:
                 print(self.k_bins)
                 print(totalHistCount)
                 sys.exit(1)
-
-            # calculate corresponding k to to bin
-            # this help to overcome statistics for low k bins
-            centeredK = totalKSum / totalHistCount
 
             # calculate corresponding k to to bin
             # this help to overcome statistics for low k bins
@@ -515,11 +516,11 @@ class FlowAnalysis:
 
     def get_and_write_statistics_to_file(self,field,name,bounds=None):
         """
-            field - 3d scalar field to get statistics from  
+            field - 3d scalar field to get statistics from
             name - human readable name of the field
             bounds - tuple, lower and upper bound for histogram, if None then min/max
-        """
-        
+        """ 
+
         N = float(self.comm.allreduce(field.size))
         total = self.comm.allreduce(np.sum(field))
         mean = total / N
