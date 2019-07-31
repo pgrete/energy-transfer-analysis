@@ -42,7 +42,7 @@ class FlowAnalysis:
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
         self.kernels= args['kernels']
-    
+
         if self.rank == 0:
             self.outfile_path = args['outfile']
 
@@ -76,13 +76,13 @@ class FlowAnalysis:
         self.localKunit /= self.localKmag
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
-    
+
     def calculate_filtering_spectrum(self, kernel):
-    """
-    following Sadek and Aluie (2018) for calculating filtered power spectrum of kinetic energy
-    kernel - one or more of the following kernel types selected by the user: Box, Gauss, Sharp
-    """
-        # set up array of filters
+        """
+        following Sadek and Aluie (2018) for calculating kinetic energy density filtering spectrum spectrum of kinetic energy
+        kernel - one of the following kernel types: Box, Gauss, Sharp
+        """
+        # set up array of filters widths
         delta_x = 1/self.res
         m = np.arange(self.res/2 - 1, 0, -1) # array of integer number of grid cells (see Sadek and Aluie eqn. 31)
         k_lm = lm = np.zeros(int(self.res/2)-1)
@@ -98,45 +98,40 @@ class FlowAnalysis:
             energy = newDistArray(self.FFT,False,rank=1)
             FT_momentum = newDistArray(self.FFT,rank=1)
             momentum_filtered = newDistArray(self.FFT,False,rank=1)
-            FT_rho = newDistArray(FFT,rank=0)
-            rho_filtered = newDistArray(FFT,False,rank=0)
+            FT_rho = newDistArray(self.FFT,rank=0)
+            rho_filtered = newDistArray(self.FFT,False,rank=0)
 
             # calculate the cumulative spectrum (epsilon) for each filter length scale
             # (see equations 27 and 6 of Sadek and Aluie)
-            FT_rho = FFT.forward(self.rho, FT_rho)
+            FT_rho = self.FFT.forward(self.rho, FT_rho)
             for j in range(3):
-                FT_momentum[j] = FFT.forward(momentum[j], FT_momentum[j])
-            
+                FT_momentum[j] = self.FFT.forward(momentum[j], FT_momentum[j])
+
             filter_width = self.res/(2*k)
             FT_G = self.Kernel(filter_width, kernel)  # calculate convolution kernel
             # calculate filtered values of momentum and density
             rho_filtered = (self.FFT.backward(FT_G * FT_rho, rho_filtered)).real
             for j in range(3):
                 momentum_filtered[j] = (self.FFT.backward(FT_G * FT_momentum[j], momentum_filtered[j])).real
-            
+
             # compute the average of momentum^2 / density
-            for j in range(3):
-                # energy in each cell associated with each dimension (shape: 3 x res x res x res)
-                energy_by_dim[j] = 0.5 * abs(momentum_filtered[j]**2) / abs(rho_filtered)
-            # total energy in each cell (sum of energies of each dimension) (shape: res x res x res)
-            energy_per_cell = np.sum(energy_by_dim, axis = 0)
-            # total energy for all cells (scalar value) local_sum = np.sum(energy_per_cell)
-            total_energy = (self.comm.allreduce(local_sum)).real
+            filtered_kin_energy = 0.5 * np.sum(np.abs(momentum_filtered**2) / np.abs(rho_filtered), axis=0)
+            total_kin_energy = (self.comm.allreduce(np.sum(filtered_kin_energy)))
             # average energy
-            epsilon[i] = total_energy / N
-            
+            epsilon[i] = total_kin_energy / N
+
         # calculate the energy spectrum for each filter length scale (see equation 33 of Sadek and Aluie)
-        TotEnergy = np.zeros(len(k_lm)-1)
+        KinEnergy = np.zeros(len(k_lm)-1)
         for i in range(len(k_lm) - 1):
-            TotEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
-                
+            KinEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
+
         if self.rank == 0:
-            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
-            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = TotEnergy
-            self.outfile.require_dataset('Filtered_' + kernel + '_TotEnergy/PowSpec/low_pass_energies', (1,len(k_lm)), dtype='f')[0] = epsilon
+            self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
+            self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = KinEnergy
+            self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/low_pass_energies', (1,len(k_lm)), dtype='f')[0] = epsilon
 
     def run_analysis(self):
-        
+
         rho = self.rho
         U = self.U
         B = self.B
@@ -149,7 +144,7 @@ class FlowAnalysis:
         self.vector_power_spectrum('u',U)
         self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
-        
+
         vec_harm, vec_sol, vec_dil = self.decompose_vector(U)
         self.vector_power_spectrum('u_s',vec_sol)
         self.vector_power_spectrum('u_c',vec_dil)
@@ -169,7 +164,6 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")
 
         if Acc is not None:
-
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
             self.get_and_write_statistics_to_file(Amag,"a")
             self.vector_power_spectrum('a',Acc)
@@ -177,7 +171,7 @@ class FlowAnalysis:
             corrUA = self.get_corr_coeff(np.sqrt(V2),Amag)
             if self.rank == 0:
                 self.outfile.require_dataset('U-A/corr', (1,), dtype='f')[0] = corrUA
-            
+
             UHarm, USol, UDil = self.decompose_vector(U)
             self.get_and_write_statistics_to_file(
                 np.sum(Acc*U,axis=0)/(
@@ -217,10 +211,12 @@ class FlowAnalysis:
 
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
-        if self.kernels:
-            print("Using the following kernels for the filtering spectrum: ", self.kernels)
+        if self.kernels is not None:
+            if self.rank == 0:
+                print("Using the following kernels for the filtering spectrum: ", self.kernels)
             for kernel in self.kernels:
-                print("on kernel: ", kernel)
+                if self.rank == 0:
+                    print("on kernel: ", kernel)
                 self.calculate_filtering_spectrum(kernel)
         
         if not self.has_b_fields:
@@ -316,19 +312,20 @@ class FlowAnalysis:
         """
         This function creates the convolution kernel for use with a particular filtering scale
         (see equation 6 of "Extracting the spectrum of a flow by spatial filtering" by Sadek and Aluie (2018))
-        For an introduction to scale filtering, see chapter 2 of "Large Eddy Simulation for Incompressible Flows" by Pierre Sagaut. The three classical filters used here are described in section 1.5 of that chapter.
+        For an introduction to scale filtering, see chapter 2 of "Large Eddy Simulation for Incompressible Flows" by Pierre Sagaut.
+        The three classical filters used here are described in section 1.5 of that chapter.
         KERNEL - the chosen type of convolution kernel (Box, Sharp, or Gaussian)
         DELTA  - filter width (in grid cells): filter_width = self.res/(2k) where k is the wavenumber associated with the filter.
         factor - (optional) multiplicative factor of the filter width
         """
         k = self.localKmag
         pi = np.pi
-        
+
         if factor is None:
             factor = 1
         else:
             factor = np.int(factor)
-        
+
         # NOTE: Box Kernel needs to be updated for parallel computing (currently non-functional)
         if KERNEL == "Box":   # aka top hat filter
             sys.exit("Box kernel is currently non-functional")
@@ -381,13 +378,6 @@ class FlowAnalysis:
             # normalized by mean shell surface
             valsShell = 4. * np.pi * centeredK**2. * (totalHistSum / totalHistCount)
             # normalized by mean shell volume
-            # this help to overcome statistics for low k bins
-            centeredK = totalKSum / totalHistCount
-
-            ###  "integrate" over k-shells
-            # normalized by mean shell surface
-            valsShell = 4. * np.pi * centeredK**2. * (totalHistSum / totalHistCount)
-            # normalized by mean shell volume
             valsVol = 4. * np.pi / 3.* (self.k_bins[1:]**3. - self.k_bins[:-1]**3.) * (totalHistSum / totalHistCount)
             # unnormalized
             valsNoNorm = totalHistSum
@@ -428,7 +418,7 @@ class FlowAnalysis:
     def decompose_vector(self, vec):
         """ decomposed input vector into harmonic, rotational and compressive part
         """
-        
+
         N = float(self.comm.allreduce(vec.size))
         total = self.comm.allreduce(np.sum(vec,axis=(1,2,3)))
         # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
@@ -529,11 +519,11 @@ class FlowAnalysis:
         rms = np.sqrt(totalSqrd / N)
 
         var = self.comm.allreduce(np.sum((field - mean)**2.)) / (N - 1.)
-        
+
         stddev = np.sqrt(var)
 
         skew = self.comm.allreduce(np.sum((field - mean)**3. / stddev**3.)) / N
-        
+
         kurt = self.comm.allreduce(np.sum((field - mean)**4. / stddev**4.)) / N - 3.
 
         globMin = self.comm.allreduce(np.min(field),op=self.MPI.MIN)
@@ -606,7 +596,7 @@ class FlowAnalysis:
             HistBins = "Snap"
         else:
             HistBins = "Sim"
-                
+
         XBins = np.linspace(bounds[0][0],bounds[0][1],129)
         YBins = np.linspace(bounds[1][0],bounds[1][1],129)
 

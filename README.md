@@ -19,7 +19,7 @@ In general the following parameters are available
 - `--type {transfer,flow,unit-test}`  set analysis type
   - `transfer` for energy transfer analysis
   - `flow` for analysis of turbulence statistics
-  - `unit-test` for some prelimiary unit tests
+  - `unit-test` for some preliminary unit tests
 - `--data_type {Enzo,AthenaPP,AthenaHDFC,Athena}` set data cube type
   - `Enzo` reads Enzo data using `yt` frontend
   - `AthenaPP` reads Athena++/K-Athena data using `yt` frontend
@@ -30,7 +30,7 @@ In general the following parameters are available
 -  `--outfile OUTFILE`     set file to store results (should be `.pkl` for `transfer` and `.hdf5` for `flow`)
 -  `--extrema_file EXTREMA_FILE` Path to pickled python dictionary containing minimum and maximum values for quantities (used for creating histograms with a fixed [global] bounds)
    - Style of dictionary is for example. `{'rho' : [ 0., 10]}`
-   - All quantities are always binned to the min and max values of the indiviual snapshot.
+   - All quantities are always binned to the min and max values of the individual snapshot.
    - If no dictionary is found under the given path (e.g., by setting it to a nonexisting file/path) no histograms with global bounds will be created
 -  `-b`                    enable magnetic fields
 -  `-forced`               output is actively forced
@@ -42,7 +42,10 @@ In general the following parameters are available
    - `lin` leads to linearly equally spaced bins with boundaries at $k = 0.5,1.5,2.5,...,Res/2$
    - `log` leads to logarithmically equally spaced bins with boundaries at $k = 0, 4 * 2^{(i - 1)/4},Res/2$
    - `test` leads to bins used for regression testing, i.e. $k = 0.5,1.5,2.5,16.0,26.5,28.5,32.0$
--  `--kernels`	choose one or more convolution kernel types to be used in filtering (current options: Top Hat/Box Kernel, Sharp Kernel, Gaussian Kernel)
+-  `--kernels` choose one or more real space convolution kernels to be used in filtering
+   - `Box` for a box car/top hat filter (implementation needs update)
+   - `Sharp` for a sharp spectral filter
+   - `Gauss` for a smooth Gaussian filter
 
 
 ## Energy transfer analysis
