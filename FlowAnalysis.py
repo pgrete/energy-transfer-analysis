@@ -26,7 +26,7 @@ class FlowAnalysis:
             try:
                 self.global_min_max = pickle.load(open(args['extrema_file'], 'rb'))
                 if self.rank == 0:
-                    print("Successfully loaded global extrema dict: %s" % 
+                    print("Successfully loaded global extrema dict: %s" %
                           self.global_min_maxFile)
             except FileNotFoundError:
                 raise SystemExit('Extrema file not found: ', args['extrema_file'])
@@ -38,11 +38,10 @@ class FlowAnalysis:
         self.B = fields['B']
         self.Acc = fields['Acc']
         self.P = fields['P']
-
         self.eos = args['eos']
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
-
+        self.kernels= args['kernels']
 
         if self.rank == 0:
             self.outfile_path = args['outfile']
@@ -78,8 +77,61 @@ class FlowAnalysis:
         if self.rank == 0:
             self.localKmag[0,0,0] = 0.
 
-    def run_analysis(self):
+    def calculate_filtering_spectrum(self, kernel):
+        """
+        following Sadek and Aluie (2018) for calculating kinetic energy density filtering spectrum spectrum of kinetic energy
+        kernel - one of the following kernel types: Box, Gauss, Sharp
+        """
+        # set up array of filters widths
+        delta_x = 1/self.res
+        m = np.arange(self.res/2 - 1, 0, -1) # array of integer number of grid cells (see Sadek and Aluie eqn. 31)
+        k_lm = lm = np.zeros(int(self.res/2)-1)
+        lm = np.array(2*m*delta_x) # array of length scales (see Sadek and Aluie eqn. 31)
+        k_lm = 1/lm # array of wavenumbers (see Sadek and Aluie eqn. 32)
+
+        momentum = self.rho * self.U
+        epsilon = np.zeros(len(k_lm))
+        N = self.res * self.res * self.res
         
+        for i, k in enumerate(k_lm):
+            # set up for calculating cumulative spectrum (epsilon) for each filter length scale
+            energy = newDistArray(self.FFT,False,rank=1)
+            FT_momentum = newDistArray(self.FFT,rank=1)
+            momentum_filtered = newDistArray(self.FFT,False,rank=1)
+            FT_rho = newDistArray(self.FFT,rank=0)
+            rho_filtered = newDistArray(self.FFT,False,rank=0)
+
+            # calculate the cumulative spectrum (epsilon) for each filter length scale
+            # (see equations 27 and 6 of Sadek and Aluie)
+            FT_rho = self.FFT.forward(self.rho, FT_rho)
+            for j in range(3):
+                FT_momentum[j] = self.FFT.forward(momentum[j], FT_momentum[j])
+
+            filter_width = self.res/(2*k)
+            FT_G = self.Kernel(filter_width, kernel)  # calculate convolution kernel
+            # calculate filtered values of momentum and density
+            rho_filtered = (self.FFT.backward(FT_G * FT_rho, rho_filtered)).real
+            for j in range(3):
+                momentum_filtered[j] = (self.FFT.backward(FT_G * FT_momentum[j], momentum_filtered[j])).real
+
+            # compute the average of momentum^2 / density
+            filtered_kin_energy = 0.5 * np.sum(np.abs(momentum_filtered**2) / np.abs(rho_filtered), axis=0)
+            total_kin_energy = (self.comm.allreduce(np.sum(filtered_kin_energy)))
+            # average energy
+            epsilon[i] = total_kin_energy / N
+
+        # calculate the energy spectrum for each filter length scale (see equation 33 of Sadek and Aluie)
+        KinEnergy = np.zeros(len(k_lm)-1)
+        for i in range(len(k_lm) - 1):
+            KinEnergy[i] = (epsilon[i+1] - epsilon[i])/(k_lm[i+1] - k_lm[i])
+
+        if self.rank == 0:
+            self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
+            self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = KinEnergy
+            self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/low_pass_energies', (1,len(k_lm)), dtype='f')[0] = epsilon
+
+    def run_analysis(self):
+
         rho = self.rho
         U = self.U
         B = self.B
@@ -92,14 +144,13 @@ class FlowAnalysis:
         self.vector_power_spectrum('u',U)
         self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
-        
+
         vec_harm, vec_sol, vec_dil = self.decompose_vector(U)
         self.vector_power_spectrum('u_s',vec_sol)
         self.vector_power_spectrum('u_c',vec_dil)
         self.vector_power_spectrum('rhou_s',np.sqrt(rho)*vec_sol)
         self.vector_power_spectrum('rhou_c',np.sqrt(rho)*vec_dil)
         del vec_harm, vec_sol, vec_dil
-        
 
         self.get_and_write_statistics_to_file(rho,"rho")
         self.get_and_write_statistics_to_file(np.log(rho),"lnrho")
@@ -120,7 +171,7 @@ class FlowAnalysis:
             corrUA = self.get_corr_coeff(np.sqrt(V2),Amag)
             if self.rank == 0:
                 self.outfile.require_dataset('U-A/corr', (1,), dtype='f')[0] = corrUA
-            
+
             UHarm, USol, UDil = self.decompose_vector(U)
             self.get_and_write_statistics_to_file(
                 np.sum(Acc*U,axis=0)/(
@@ -160,15 +211,20 @@ class FlowAnalysis:
 
             self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
 
-
+        if self.kernels is not None:
+            if self.rank == 0:
+                print("Using the following kernels for the filtering spectrum: ", self.kernels)
+            for kernel in self.kernels:
+                if self.rank == 0:
+                    print("on kernel: ", kernel)
+                self.calculate_filtering_spectrum(kernel)
+        
         if not self.has_b_fields:
             if self.rank == 0:
                 self.outfile.close()
             return
 
-
         B2 = np.sum(B**2.,axis=0)
-
         self.get_and_write_statistics_to_file(np.sqrt(B2),"B")
         self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity")
 
@@ -249,12 +305,51 @@ class FlowAnalysis:
         self.get_2d_hist('rho-B',rho,np.sqrt(B2))
         self.get_2d_hist('log10rho-B',np.log10(rho),np.sqrt(B2))
 
-
         if self.rank == 0:
             self.outfile.close()
-            
 
+    def Kernel(self,DELTA,KERNEL,factor=None):
+        """
+        This function creates the convolution kernel for use with a particular filtering scale
+        (see equation 6 of "Extracting the spectrum of a flow by spatial filtering" by Sadek and Aluie (2018))
+        For an introduction to scale filtering, see chapter 2 of "Large Eddy Simulation for Incompressible Flows" by Pierre Sagaut.
+        The three classical filters used here are described in section 1.5 of that chapter.
+        KERNEL - the chosen type of convolution kernel (Box, Sharp, or Gaussian)
+        DELTA  - filter width (in grid cells): filter_width = self.res/(2k) where k is the wavenumber associated with the filter.
+        factor - (optional) multiplicative factor of the filter width
+        """
+        k = self.localKmag
+        pi = np.pi
 
+        if factor is None:
+            factor = 1
+        else:
+            factor = np.int(factor)
+
+        # NOTE: Box Kernel needs to be updated for parallel computing (currently non-functional)
+        if KERNEL == "Box":   # aka top hat filter
+            sys.exit("Box kernel is currently non-functional")
+            localKern = np.zeros((self.res,self.res,self.res))
+            for i in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):
+                for j in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):
+                    for k in range(-factor*np.int(DELTA)//2,factor*np.int(DELTA)//2+1):
+                        localFac = 1.
+                        if np.abs(i) == factor*np.int(DELTA)//2:
+                            localFac *= 0.5
+                        if np.abs(j) == factor*np.int(DELTA)//2:
+                            localFac *= 0.5
+                        if np.abs(k) == factor*np.int(DELTA)//2:
+                            localFac *= 0.5 
+            localKern[i,j,k] = localFac / float(factor*np.int(DELTA))**3.
+            return fftn(localKern)
+        elif KERNEL == "Sharp":
+            localKern = np.ones_like(k)
+            localKern[k > np.float(self.res)/(2. * factor * np.float(DELTA))] = 0. # Remove small scales
+            return localKern
+        elif KERNEL == "Gauss":
+            return np.exp(-(pi * factor * DELTA/self.res * k)**2. /6.)
+        else:
+            sys.exit("Unknown kernel used")
 
     def normalized_spectrum(self,k,quantity):
         """ Calculate normalized power spectra
@@ -323,7 +418,7 @@ class FlowAnalysis:
     def decompose_vector(self, vec):
         """ decomposed input vector into harmonic, rotational and compressive part
         """
-        
+
         N = float(self.comm.allreduce(vec.size))
         total = self.comm.allreduce(np.sum(vec,axis=(1,2,3)))
         # dividing by N/3 as the FFTs are per dimension, i.e., normal is N^3 but N is 3N^3
@@ -409,15 +504,13 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/PowSpec/TotDil', (1,), dtype='f')[0] = totPowDil
             self.outfile.require_dataset(name + '/PowSpec/TotHarm', (1,), dtype='f')[0] = totPowHarm
 
-
-
     def get_and_write_statistics_to_file(self,field,name,bounds=None):
         """
             field - 3d scalar field to get statistics from
             name - human readable name of the field
             bounds - tuple, lower and upper bound for histogram, if None then min/max
         """
-        
+
         N = float(self.comm.allreduce(field.size))
         total = self.comm.allreduce(np.sum(field))
         mean = total / N
@@ -426,11 +519,11 @@ class FlowAnalysis:
         rms = np.sqrt(totalSqrd / N)
 
         var = self.comm.allreduce(np.sum((field - mean)**2.)) / (N - 1.)
-        
+
         stddev = np.sqrt(var)
 
         skew = self.comm.allreduce(np.sum((field - mean)**3. / stddev**3.)) / N
-        
+
         kurt = self.comm.allreduce(np.sum((field - mean)**4. / stddev**4.)) / N - 3.
 
         globMin = self.comm.allreduce(np.min(field),op=self.MPI.MIN)
@@ -503,8 +596,7 @@ class FlowAnalysis:
             HistBins = "Snap"
         else:
             HistBins = "Sim"
-        
-        
+
         XBins = np.linspace(bounds[0][0],bounds[0][1],129)
         YBins = np.linspace(bounds[1][0],bounds[1][1],129)
 
@@ -517,7 +609,7 @@ class FlowAnalysis:
             tmp[1] = YBins
             tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
             tmp[:,:] = totalHist.astype(float)
-        
+
         Xname, Yname = name.split('-')
         if Xname in self.global_min_max.keys() and Yname in self.global_min_max.keys():
             XBins = np.linspace(self.global_min_max[Xname][0],self.global_min_max[Xname][1],129)
@@ -525,7 +617,7 @@ class FlowAnalysis:
 
             hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
             totalHist = self.comm.allreduce(hist)
-            
+
             HistBins = 'globalMinMax'
 
             if self.rank == 0:
@@ -553,6 +645,4 @@ class FlowAnalysis:
         msg = "compressive part is not rotation free"
         assert np.sum(np.linalg.norm(MPIrotX(self.comm, vec_dil),axis=0))/vec_dil.size/3 < 1e-13, msg
 
-
-        
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4 ai

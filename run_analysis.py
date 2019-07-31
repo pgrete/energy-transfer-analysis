@@ -91,6 +91,13 @@ parser.add_argument('--binning',
                     choices=['log', 'lin', 'test'],
                     help='set binning used in energy transfer analysis')
 
+parser.add_argument('--kernels',
+                    default=None,
+                    type=str,
+                    nargs='+',
+                    choices=['Box', 'Sharp', 'Gauss'],
+                    help='choose convolution kernel type(s): Box, Sharp, or Gauss')
+
 args = vars(parser.parse_args())
 
 # Check equation of state parameters

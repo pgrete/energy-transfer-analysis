@@ -19,7 +19,7 @@ In general the following parameters are available
 - `--type {transfer,flow,unit-test}`  set analysis type
   - `transfer` for energy transfer analysis
   - `flow` for analysis of turbulence statistics
-  - `unit-test` for some prelimiary unit tests
+  - `unit-test` for some preliminary unit tests
 - `--data_type {Enzo,AthenaPP,AthenaHDFC,Athena}` set data cube type
   - `Enzo` reads Enzo data using `yt` frontend
   - `AthenaPP` reads Athena++/K-Athena data using `yt` frontend
@@ -30,7 +30,7 @@ In general the following parameters are available
 -  `--outfile OUTFILE`     set file to store results (should be `.pkl` for `transfer` and `.hdf5` for `flow`)
 -  `--extrema_file EXTREMA_FILE` Path to pickled python dictionary containing minimum and maximum values for quantities (used for creating histograms with a fixed [global] bounds)
    - Style of dictionary is for example. `{'rho' : [ 0., 10]}`
-   - All quantities are always binned to the min and max values of the indiviual snapshot.
+   - All quantities are always binned to the min and max values of the individual snapshot.
    - If no dictionary is found under the given path (e.g., by setting it to a nonexisting file/path) no histograms with global bounds will be created
 -  `-b`                    enable magnetic fields
 -  `-forced`               output is actively forced
@@ -42,7 +42,10 @@ In general the following parameters are available
    - `lin` leads to linearly equally spaced bins with boundaries at $k = 0.5,1.5,2.5,...,Res/2$
    - `log` leads to logarithmically equally spaced bins with boundaries at $k = 0, 4 * 2^{(i - 1)/4},Res/2$
    - `test` leads to bins used for regression testing, i.e. $k = 0.5,1.5,2.5,16.0,26.5,28.5,32.0$
-
+-  `--kernels` choose one or more real space convolution kernels to be used in filtering
+   - `Box` for a box car/top hat filter (implementation needs update)
+   - `Sharp` for a sharp spectral filter
+   - `Gauss` for a smooth Gaussian filter
 
 
 ## Energy transfer analysis
@@ -52,7 +55,7 @@ In general the following parameters are available
 Use the `run_analysis.py` script with the `--flow transfer` option.
 For example (to run the transfer analysis on the regression data set),
 ```
-srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test-out.pkl --eos adiabatic --gamma 1.0001  -forced -b
+srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test-out.pkl --eos adiabatic --gamma 1.0001  -forced -b --kernels Gauss
 ```
 
 ## Turbulent flow analysis
@@ -68,6 +71,10 @@ srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --dat
 - Power spectra
   - for total, solenoidal and compressive components
   - with different normalization: no weighting, surface average, shell average
+  - with different definitions of kinetic energy density
+    - $E(k) = \sqrt(\rho u)^2$ (Grete, et al., 2017)
+    - $E(k) = |\overline{\rho u_l}|^2 / 2\rho_l$ (Sadek & Aluie, 2018)
+       - must specify convolution kernel type with `--kernel`
 - Dispersion measures, rotation measures and line of sight magnetic field along all axes
 
 ## Usage
