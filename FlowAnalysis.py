@@ -167,6 +167,16 @@ class FlowAnalysis:
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
             self.get_and_write_statistics_to_file(Amag,"a")
             self.vector_power_spectrum('a',Acc)
+            self.scalar_power_spectrum('a_x',Acc[0,:,:,:])
+            self.scalar_power_spectrum('a_y',Acc[1,:,:,:])
+            self.scalar_power_spectrum('a_z',Acc[2,:,:,:])
+
+            vec_harm, vec_sol, vec_dil = self.decompose_vector(Acc)
+            self.vector_power_spectrum('a_s',vec_sol)
+            self.vector_power_spectrum('a_c',vec_dil)
+            self.get_and_write_statistics_to_file(np.sqrt(np.sum(vec_sol**2.,axis=0)),"a_s_mag")
+            self.get_and_write_statistics_to_file(np.sqrt(np.sum(vec_dil**2.,axis=0)),"a_c_mag")
+            del vec_harm, vec_sol, vec_dil
 
             corrUA = self.get_corr_coeff(np.sqrt(V2),Amag)
             if self.rank == 0:
