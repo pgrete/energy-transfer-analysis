@@ -1,14 +1,10 @@
 import yt
 import numpy as np
 from mpi4py import MPI
+from mpi4py_fft import newDistArray
+import FFTHelperFuncs
 import sys
 import h5py
-try:
-    import athena_read
-    missing_athena_read = False
-except ImportError:
-    missing_athena_read = True
-
 
 comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -56,18 +52,12 @@ def read_fields(args):
             pressField = ('athena_pp', 'press')
 
         if 'HDF' in args['data_type']:
-            if missing_athena_read:
-                raise SystemExit(
-                    'Asking to read using athena_read (through AthenaPPHDF), but '
-                    'athena_read import was unsuccessful.\n' +
-                    'Make sure the /path/to/(k)athena/vis/python is in your PYTHONPATH'
-                    )
             readAllFieldsWithHDF(fields,'./Turb.prim.' + args['data_path'], args['res'],
                                 rhoField, velFields, magFields,
-                                None, pressField,'F',use_athena_read=True)
+                                None, pressField,'F',use_athena_hdf=True)
             readAllFieldsWithHDF(fields,'./Turb.acc.' + args['data_path'], args['res'],
                                 None, None, None,
-                                accFields, None,'F',use_athena_read=True)
+                                accFields, None,'F',use_athena_hdf=True)
         else:
             readAllFieldsWithYT(fields,'./Turb.prim.' + args['data_path'], args['res'],
                                 rhoField, velFields, magFields,
@@ -123,6 +113,8 @@ def readAllFieldsWithYT(fields,loadPath,Res,
     Reads all fields using the yt frontend. Data is read in parallel.
 
     """
+    raise SystemExit(
+        'Reading data with yt not adapted for pencil demp yet!')
 	
     if Res % size != 0:
         raise SystemExit(
@@ -214,40 +206,82 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
 
     return np.ascontiguousarray(data)
 
-def readOneFieldWithAthenaRead(loadPath,FieldName,Res,order):
+def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
     """
-    reading (K-)Athena++ HDF data dumps (which are kji/Fortan/column major
-    and thus require a transpose as all internal structures here are row major
+    reading (K-)Athena++ HDF data dumps
     """
 
     # stripping the yt field type
     FieldName = FieldName[1]
-    chunkSize = Res//size
-    startIdx = int(rank * chunkSize)
-    endIdx = int((rank + 1) * chunkSize)
-    if endIdx == Res:
-        endIdx = None
 
-    h5Data = athena_read.athdf(loadPath, dtype=np.float32)[FieldName]
-    # the copy is important so that the data is contiguous for the MPI comm
-    local_slice_in = np.copy(h5Data[startIdx:endIdx,:,:].T,order='C')
-    local_slice_out = np.zeros((chunkSize,Res,Res))
+    tmp = np.zeros(FFTHelperFuncs.local_shape, dtype=np.float64)
+    loc_slc = tmp.shape
 
-    recv = np.zeros_like(local_slice_in)
-    comm.Alltoall(local_slice_in,recv)
+    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // loc_slc
 
-    # reordering data
-    for i in range(chunkSize):
-        for j in range(size):
-            end_idx = (j+1)*chunkSize
-            if end_idx == Res:
-                end_idx = None
-            local_slice_out[i,:,j*chunkSize:end_idx] = recv[i+j*chunkSize,:,:]
+    if h5py.h5.get_config().mpi:
+        h5py_kwargs = {
+            'driver' : 'mpio',
+            'comm' : comm,
+            }
+    else:
+        h5py_kwargs = {}
 
-    return np.ascontiguousarray(np.float64(local_slice_out))
+    with h5py.File(loadPath,'r', **h5py_kwargs) as f:
+        mb_size = f.attrs['MeshBlockSize']
+        rg_size = f.attrs['RootGridSize']
+
+        field_idx = None
+        for i in range(f.attrs['NumVariables'][0]):
+            if f.attrs['VariableNames'][i] == np.array(FieldName,dtype=bytes):
+                field_idx = i
+                break
+        if field_idx is None:
+            raise SystemExit(
+                'Error: Cannot find field "%s" in dataset' % FieldName
+                )
+
+        if (loc_slc % mb_size != 0).any():
+            raise SystemExit(
+                'Error: local data size  ', loc_slc,
+                'cannot be matched to meshblock size of ', mb_size)
+
+        n_mb = rg_size // mb_size # number of meshblocks in each dimension
+        gid_x_s = rank // n_proc[1] * tmp.shape[0] # global x start index
+        gid_x_e = rank // n_proc[1] * tmp.shape[0] + tmp.shape[0] # global x end index
+        gid_y_s = rank % n_proc[1] * tmp.shape[1] # global y start index
+        gid_y_e = rank % n_proc[1] * tmp.shape[1] + tmp.shape[1] # global y end index
+
+        log_loc_all = np.copy(f['LogicalLocations']) # all logical meshblock locations
+
+        for i, loc in enumerate(log_loc_all):
+            gid_mb = loc * mb_size # index of meshblock
+            # make sure meshblock belong to this MPI proc
+            if (gid_mb[0] < gid_x_s or
+                gid_mb[0] >= gid_x_e or
+                gid_mb[1] < gid_y_s or
+                gid_mb[1] >= gid_y_e):
+                continue
+
+            try:
+                data = f['prim'][field_idx,i,:,:,:] # actual meshblock data
+            except KeyError:
+                try:
+                    data = f['hydro'][field_idx,i,:,:,:] # actual meshblock data
+                except KeyError:
+                    raise SystemExit(
+                        'Can neither find prim nor hydro field in dataset'
+                        )
+
+            # currently these are global loc, need local loc
+            tmp[loc[0]*mb_size[0] - gid_x_s : (loc[0]+1)*mb_size[0] - gid_x_s,
+                loc[1]*mb_size[1] - gid_y_s : (loc[1]+1)*mb_size[1] - gid_y_s,
+                loc[2]*mb_size[2] : (loc[2]+1)*mb_size[2]] = data.T
+
+    return np.ascontiguousarray(np.float64(tmp))
 
 def readAllFieldsWithHDF(fields,loadPath,Res,
-    rhoField,velFields,magFields,accFields,pField,order,use_athena_read=False):
+    rhoField,velFields,magFields,accFields,pField,order,use_athena_hdf=False):
     """
     Reads all fields using the HDF5. Data is read in parallel.
 
@@ -261,10 +295,10 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
         print("For safety reasons you have to specify the order (row or column major) for your data.")
         sys.exit(1)
 
-    FinalShape = (Res//size,Res,Res)  
+    FinalShape = FFTHelperFuncs.local_shape
 
-    if use_athena_read:
-        readOneFieldWithX = readOneFieldWithAthenaRead
+    if use_athena_hdf:
+        readOneFieldWithX = readOneFieldWithAthenaPPHDF
     else:
         readOneFieldWithX = readOneFieldWithHDF
 

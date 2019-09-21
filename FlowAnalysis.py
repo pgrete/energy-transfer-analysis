@@ -1,6 +1,6 @@
 import numpy as np
-from mpi4py_fft import PFFT, newDistArray
-from FFTHelperFuncs import get_local_wavenumbermesh
+import FFTHelperFuncs
+from mpi4py_fft import newDistArray
 import time
 import pickle
 import sys
@@ -53,13 +53,8 @@ class FlowAnalysis:
         if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
             self.k_bins = self.k_bins[:-1]
 
-        N = np.array([self.res,self.res,self.res], dtype=int)
-        # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
-        L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
-        self.FFT = PFFT(self.comm, N, axes=(0,1,2), collapse=False,
-                        slab=True, dtype=np.complex128)
-
-        self.localK = get_local_wavenumbermesh(self.FFT, L)
+        self.FFT = FFTHelperFuncs.FFT
+        self.localK = FFTHelperFuncs.local_wavenumbermesh
         self.localKmag = np.linalg.norm(self.localK,axis=0)
 
         self.localKunit = np.copy(self.localK)
@@ -269,28 +264,28 @@ class FlowAnalysis:
 
         self.vector_power_spectrum('B',B)
 
-        # this is cheap... and only works for slab decomp on x-axis
-        # np.sum is required for slabs with width > 1
-        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:
-            raise SystemExit('Calculation of dispersion measures only works for slabs')
-
-        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)
-        RM = self.comm.allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
-        chunkSize = int(self.res/self.size)
-        endIdx = int((self.rank + 1) * chunkSize)
-        if endIdx == self.size:
-            endIdx = None
-        self.get_and_write_statistics_to_file(DM[self.rank*chunkSize:endIdx,:],"DM_x")
-        self.get_and_write_statistics_to_file(np.log(DM[self.rank*chunkSize:endIdx,:]),"lnDM_x")
-        self.get_and_write_statistics_to_file(RM[self.rank*chunkSize:endIdx,:],"RM_x")
-        self.get_and_write_statistics_to_file(RM[self.rank*chunkSize:endIdx,:]/DM[self.rank*chunkSize:endIdx,:],"LOSB_x")
-
-        DM = np.mean(rho,axis=1)
-        RM = np.mean(B[1]*rho,axis=1)
-        self.get_and_write_statistics_to_file(DM,"DM_y")
-        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_y")
-        self.get_and_write_statistics_to_file(RM,"RM_y")
-        self.get_and_write_statistics_to_file(RM/DM,"LOSB_y")
+#        # this is cheap... and only works for slab decomp on x-axis
+#        # np.sum is required for slabs with width > 1
+#        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:
+#            raise SystemExit('Calculation of dispersion measures only works for slabs')
+#
+#        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)
+#        RM = self.comm.allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
+#        chunkSize = int(self.res/self.size)
+#        endIdx = int((self.rank + 1) * chunkSize)
+#        if endIdx == self.size:
+#            endIdx = None
+#        self.get_and_write_statistics_to_file(DM[self.rank*chunkSize:endIdx,:],"DM_x")
+#        self.get_and_write_statistics_to_file(np.log(DM[self.rank*chunkSize:endIdx,:]),"lnDM_x")
+#        self.get_and_write_statistics_to_file(RM[self.rank*chunkSize:endIdx,:],"RM_x")
+#        self.get_and_write_statistics_to_file(RM[self.rank*chunkSize:endIdx,:]/DM[self.rank*chunkSize:endIdx,:],"LOSB_x")
+#
+#        DM = np.mean(rho,axis=1)
+#        RM = np.mean(B[1]*rho,axis=1)
+#        self.get_and_write_statistics_to_file(DM,"DM_y")
+#        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_y")
+#        self.get_and_write_statistics_to_file(RM,"RM_y")
+#        self.get_and_write_statistics_to_file(RM/DM,"LOSB_y")
 
         DM = np.mean(rho,axis=2)
         RM = np.mean(B[2]*rho,axis=2)

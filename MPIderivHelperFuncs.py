@@ -1,4 +1,5 @@
 import numpy as np
+import FFTHelperFuncs
 
 def MPIderiv2(comm,var,dim):
     """Returns first derivative (2-point central finite difference)
@@ -18,30 +19,42 @@ def MPIderiv2(comm,var,dim):
     sl_m1 = slice(None,-2,None)
     sl_p1 = slice(2,None,None)
     sl_c = slice(1,-1,None)
-    ds = 2.0/float(var.shape[1]) # assumes axis 1 covers entire grid with L = 1       
+    ds = 2.0/float(var.shape[2]) # assumes axis 2 covers entire grid with L = 1
+    N = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int)
+    loc_slc = FFTHelperFuncs.local_shape
+    n_proc = N // loc_slc
                
-    # send right slice of local proc as left slab to follow proc
-    leftSlice = None
-    leftSlice = comm.sendrecv(sendobj=var[-1:,:,:],dest=(rank+1)%size,source=(rank-1)%size)
-    
-    # send left slice of local proc as right slab to follow proc
-    rightSlice = None
-    rightSlice = comm.sendrecv(sendobj=var[:1,:,:],dest=(rank-1)%size,source=(rank+1)%size)
-    
-    tmp = np.concatenate((leftSlice,var,rightSlice),axis=0)
-    tmp = np.concatenate((tmp[:,-1:,:],tmp,tmp[:,:1,:]),axis=1)
-    tmp = np.concatenate((tmp[:,:,-1:],tmp,tmp[:,:,:1]),axis=2)    
-
-    #TODO further optimization could be done here, i.e. communicate only once for all three derivs
     if (dim == 0):
-        p1 = tmp[sl_p1,sl_c,sl_c]
-        m1 = tmp[sl_m1,sl_c,sl_c]
+        next_proc = (rank + n_proc[1]) % (n_proc[0] * n_proc[1])
+        prev_proc = (rank - n_proc[1]) % (n_proc[0] * n_proc[1])
+        # send right slice of local proc as left slab to follow proc
+        leftSlice = None
+        leftSlice = comm.sendrecv(sendobj=var[-1:,:,:],dest=next_proc,source=prev_proc)
+        # send left slice of local proc as right slab to follow proc
+        rightSlice = None
+        rightSlice = comm.sendrecv(sendobj=var[:1,:,:],dest=prev_proc,source=next_proc)
+
+        tmp = np.concatenate((leftSlice,var,rightSlice),axis=0)
+        p1 = tmp[sl_p1,:,:]
+        m1 = tmp[sl_m1,:,:]
     elif (dim == 1):
-        p1 = tmp[sl_c,sl_p1,sl_c]
-        m1 = tmp[sl_c,sl_m1,sl_c]
+        next_proc = (rank + 1) % n_proc[1] + (rank // n_proc[1]) * n_proc[1]
+        prev_proc = (rank - 1) % n_proc[1] + (rank // n_proc[1]) * n_proc[1]
+        # send right slice of local proc as left slab to follow proc
+        leftSlice = None
+        leftSlice = comm.sendrecv(sendobj=var[:,-1:,:],dest=next_proc,source=prev_proc)
+        # send left slice of local proc as right slab to follow proc
+        rightSlice = None
+        rightSlice = comm.sendrecv(sendobj=var[:,:1,:],dest=prev_proc,source=next_proc)
+
+        tmp = np.concatenate((leftSlice,var,rightSlice),axis=1)
+        p1 = tmp[:,sl_p1,:]
+        m1 = tmp[:,sl_m1,:]
     elif (dim == 2):
-        p1 = tmp[sl_c,sl_c,sl_p1]
-        m1 = tmp[sl_c,sl_c,sl_m1]
+        # nothing special required here as we do pencil decomp in x-y
+        tmp = np.concatenate((var[:,:,-1:],var,var[:,:,:1]),axis=2)
+        p1 = tmp[:,:,sl_p1]
+        m1 = tmp[:,:,sl_m1]
     else:
         print("watch out for dimension!")
                 

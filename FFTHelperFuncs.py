@@ -14,6 +14,49 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS "AS IS" AND A
 """
 
 import numpy as np
+import sys
+from mpi4py import MPI
+from mpi4py_fft import PFFT, newDistArray
+comm  = MPI.COMM_WORLD
+
+FFT = None
+local_wavenumbermesh = None
+local_shape = None
+
+def setup_fft(res):
+    """ Setup shared FFT object and properties
+        res - linear resolution
+    """
+
+    global FFT
+    global local_wavenumbermesh
+    global local_shape
+
+    if comm.Get_rank() == 0:
+        print("""!!! WARNING - CURRENT PITFALLS !!!
+        - data units are ignored
+        - data is assumed to live on a 3d uniform grid with L = 1
+        - for the FFT L = 2 pi is implicitly assumed to work with integer wavenumbers
+        """)
+
+    time_start = MPI.Wtime()
+
+    N = np.array([res, res, res], dtype=int)
+    # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
+    L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
+    FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=np.complex128)
+
+    local_wavenumbermesh = get_local_wavenumbermesh(FFT, L)
+    local_shape = newDistArray(FFT,False).shape
+
+    time_elapsed = MPI.Wtime() - time_start
+    time_elapsed = comm.gather(time_elapsed)
+
+    if comm.Get_rank() == 0:
+        print("Setup up FFT and wavenumbers done in %.3g +/- %.3g" %
+            (np.mean(time_elapsed), np.std(time_elapsed)))
+        sys.stdout.flush()
+
 
 # from
 # https://bitbucket.org/mpi4py/mpi4py-fft/raw/67dfed980115108c76abb7e865860b5da98674f9/examples/spectral_dns_solver.py
