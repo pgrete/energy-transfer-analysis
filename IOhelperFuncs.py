@@ -26,6 +26,8 @@ def read_fields(args):
     magFields = None
     accFields = None
 
+    time_start = MPI.Wtime()
+
     if args['data_type'] == 'Enzo':
         rhoField = "Density"
         velFields = ["x-velocity","y-velocity","z-velocity"]
@@ -104,6 +106,14 @@ def read_fields(args):
 
     else:
         raise SystemExit('Unknown data type: ', data_type)
+
+    time_elapsed = MPI.Wtime() - time_start
+    time_elapsed = comm.gather(time_elapsed)
+
+    if comm.Get_rank() == 0:
+        print("Reading data done in %.3g +/- %.3g" %
+            (np.mean(time_elapsed), np.std(time_elapsed)))
+        sys.stdout.flush()
 
     return fields
 
@@ -231,15 +241,24 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
         mb_size = f.attrs['MeshBlockSize']
         rg_size = f.attrs['RootGridSize']
 
-        field_idx = None
-        for i in range(f.attrs['NumVariables'][0]):
-            if f.attrs['VariableNames'][i] == np.array(FieldName,dtype=bytes):
-                field_idx = i
-                break
-        if field_idx is None:
+        if 'rho' == FieldName:
+            field_idx = 0
+            ds_name = 'prim'
+        elif 'press' == FieldName:
+            field_idx = 1
+            ds_name = 'prim'
+        elif 'vel' in FieldName:
+            field_idx = 1 + int(FieldName[-1])
+            ds_name = 'prim'
+        elif 'Bcc' in FieldName:
+            field_idx = int(FieldName[-1]) - 1
+            ds_name = 'B'
+        elif 'acc' in FieldName:
+            field_idx = ord(FieldName[-1]) - 120
+            ds_name = 'hydro'
+        else:
             raise SystemExit(
-                'Error: Cannot find field "%s" in dataset' % FieldName
-                )
+                'Unknown field: ', FieldName)
 
         if (loc_slc % mb_size != 0).any():
             raise SystemExit(
@@ -264,14 +283,11 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
                 continue
 
             try:
-                data = f['prim'][field_idx,i,:,:,:] # actual meshblock data
+                data = f[ds_name][field_idx,i,:,:,:] # actual meshblock data
             except KeyError:
-                try:
-                    data = f['hydro'][field_idx,i,:,:,:] # actual meshblock data
-                except KeyError:
-                    raise SystemExit(
-                        'Can neither find prim nor hydro field in dataset'
-                        )
+                raise SystemExit(
+                    'Can neither find data in dataset: ', ds_name, field_idx
+                    )
 
             # currently these are global loc, need local loc
             tmp[loc[0]*mb_size[0] - gid_x_s : (loc[0]+1)*mb_size[0] - gid_x_s,
