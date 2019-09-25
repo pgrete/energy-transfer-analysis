@@ -264,28 +264,36 @@ class FlowAnalysis:
 
         self.vector_power_spectrum('B',B)
 
-#        # this is cheap... and only works for slab decomp on x-axis
-#        # np.sum is required for slabs with width > 1
-#        if rho.shape[-1] != self.res or rho.shape[-2] != self.res:
-#            raise SystemExit('Calculation of dispersion measures only works for slabs')
-#
-#        DM = self.comm.allreduce(np.sum(rho,axis=0))/float(self.res)
-#        RM = self.comm.allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
-#        chunkSize = int(self.res/self.size)
-#        endIdx = int((self.rank + 1) * chunkSize)
-#        if endIdx == self.size:
-#            endIdx = None
-#        self.get_and_write_statistics_to_file(DM[self.rank*chunkSize:endIdx,:],"DM_x")
-#        self.get_and_write_statistics_to_file(np.log(DM[self.rank*chunkSize:endIdx,:]),"lnDM_x")
-#        self.get_and_write_statistics_to_file(RM[self.rank*chunkSize:endIdx,:],"RM_x")
-#        self.get_and_write_statistics_to_file(RM[self.rank*chunkSize:endIdx,:]/DM[self.rank*chunkSize:endIdx,:],"LOSB_x")
-#
-#        DM = np.mean(rho,axis=1)
-#        RM = np.mean(B[1]*rho,axis=1)
-#        self.get_and_write_statistics_to_file(DM,"DM_y")
-#        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_y")
-#        self.get_and_write_statistics_to_file(RM,"RM_y")
-#        self.get_and_write_statistics_to_file(RM/DM,"LOSB_y")
+        # this is cheap... and only works for pencil decomp in z axis
+        # np.sum is required for slabs with width > 1
+        if rho.shape[-1] != self.res:
+            raise SystemExit('Calculation of dispersion measures only works for pencils')
+
+        # using subcomms here so that the pencil based slices are not getting mixed
+        DM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(rho,axis=0))/float(self.res)
+        RM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
+        # using chunks so that each process only contributes it's own chunk of data
+        # as all processes have the full information after the allreduce
+        chunkSize = DM.shape[0] // FFTHelperFuncs.FFT.subcomm[0].Get_size()
+        startIdx = FFTHelperFuncs.FFT.subcomm[0].Get_rank() * chunkSize
+        endIdx = (FFTHelperFuncs.FFT.subcomm[0].Get_rank() + 1) * chunkSize
+        self.get_and_write_statistics_to_file(DM[startIdx:endIdx,:],"DM_x")
+        self.get_and_write_statistics_to_file(np.log(DM[startIdx:endIdx,:]),"lnDM_x")
+        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:],"RM_x")
+        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:]/DM[startIdx:endIdx,:],"LOSB_x")
+
+        # using subcomms here so that the pencil based slices are not getting mixed
+        DM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(rho,axis=1))/float(self.res)
+        RM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(B[1]*rho,axis=1))/float(self.res)
+        # using chunks so that each process only contributes it's own chunk of data
+        # as all processes have the full information after the allreduce
+        chunkSize = DM.shape[1] // FFTHelperFuncs.FFT.subcomm[1].Get_size()
+        startIdx = FFTHelperFuncs.FFT.subcomm[1].Get_rank() * chunkSize
+        endIdx = (FFTHelperFuncs.FFT.subcomm[1].Get_rank() + 1) * chunkSize
+        self.get_and_write_statistics_to_file(DM[:,startIdx:endIdx],"DM_y")
+        self.get_and_write_statistics_to_file(np.log(DM[:,startIdx:endIdx]),"lnDM_y")
+        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx],"RM_y")
+        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx]/DM[:,startIdx:endIdx],"LOSB_y")
 
         DM = np.mean(rho,axis=2)
         RM = np.mean(B[2]*rho,axis=2)
