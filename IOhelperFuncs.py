@@ -317,16 +317,17 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
     Reads all fields using the HDF5. Data is read in parallel.
 
     """
-	
-    if Res % size != 0:
+
+    FinalShape = FFTHelperFuncs.local_shape
+
+    if (FinalShape[0] * FFTHelperFuncs.FFT.subcomm[0].Get_size() != Res or
+        FinalShape[1] * FFTHelperFuncs.FFT.subcomm[1].Get_size() != Res):
         print("Data cannot be split evenly among processes. Abort (for now) - fix me!")
         sys.exit(1)
 
     if order is not "C" and order is not "F":
         print("For safety reasons you have to specify the order (row or column major) for your data.")
         sys.exit(1)
-
-    FinalShape = FFTHelperFuncs.local_shape
 
     if use_athena_hdf:
         readOneFieldWithX = readOneFieldWithAthenaPPHDF
