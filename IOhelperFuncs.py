@@ -254,18 +254,20 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
             field_idx = int(FieldName[-1]) - 1
             ds_name = 'B'
         elif 'acc' in FieldName:
+            # translate from ..._x, _y, _z to index 0, 1, 2
             field_idx = ord(FieldName[-1]) - 120
             ds_name = 'hydro'
         else:
             raise SystemExit(
                 'Unknown field: ', FieldName)
 
-        if (loc_slc % mb_size != 0).any():
+
+        if not ((loc_slc[0] % mb_size[0] == 0 or mb_size[0] % loc_slc[0] == 0) and
+                (loc_slc[1] % mb_size[1] == 0 or mb_size[1] % loc_slc[1] == 0)):
             raise SystemExit(
                 'Error: local data size  ', loc_slc,
                 'cannot be matched to meshblock size of ', mb_size)
 
-        n_mb = rg_size // mb_size # number of meshblocks in each dimension
         gid_x_s = rank // n_proc[1] * tmp.shape[0] # global x start index
         gid_x_e = rank // n_proc[1] * tmp.shape[0] + tmp.shape[0] # global x end index
         gid_y_s = rank % n_proc[1] * tmp.shape[1] # global y start index
@@ -276,23 +278,40 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
         for i, loc in enumerate(log_loc_all):
             gid_mb = loc * mb_size # index of meshblock
             # make sure meshblock belong to this MPI proc
-            if (gid_mb[0] < gid_x_s or
-                gid_mb[0] >= gid_x_e or
-                gid_mb[1] < gid_y_s or
-                gid_mb[1] >= gid_y_e):
+            if not ((gid_mb[0] <= gid_x_s < gid_mb[0] + mb_size[0] or
+                     gid_x_s <= gid_mb[0] < gid_x_e) and
+                    (gid_mb[1] <= gid_y_s < gid_mb[1] + mb_size[1] or
+                     gid_y_s <= gid_mb[1] < gid_y_e)):
                 continue
 
             try:
                 data = f[ds_name][field_idx,i,:,:,:] # actual meshblock data
             except KeyError:
                 raise SystemExit(
-                    'Can neither find data in dataset: ', ds_name, field_idx
+                    'Cannot find data in dataset: ', ds_name, field_idx
                     )
 
-            # currently these are global loc, need local loc
-            tmp[loc[0]*mb_size[0] - gid_x_s : (loc[0]+1)*mb_size[0] - gid_x_s,
-                loc[1]*mb_size[1] - gid_y_s : (loc[1]+1)*mb_size[1] - gid_y_s,
-                loc[2]*mb_size[2] : (loc[2]+1)*mb_size[2]] = data.T
+            # if local x pencil dim smaller than a meshblock use entire local pencil
+            if mb_size[0] >= loc_slc[0]:
+                loc_x_s = 0
+                loc_x_e = tmp.shape[0]
+            else:
+                loc_x_s = loc[0]*mb_size[0] - gid_x_s
+                loc_x_e = (loc[0]+1)*mb_size[0] - gid_x_s
+            sl_x = slice(gid_x_s % mb_size[0],gid_x_s % mb_size[0] + tmp.shape[0])
+
+            # if local y pencil dim smaller than a meshblock use entire local pencil
+            if mb_size[1] >= loc_slc[1]:
+                loc_y_s = 0
+                loc_y_e = tmp.shape[1]
+            else:
+                loc_y_s = loc[1]*mb_size[1] - gid_y_s
+                loc_y_e = (loc[1] + 1)*mb_size[1] - gid_y_s
+            sl_y = slice(gid_y_s % mb_size[1],gid_y_s % mb_size[1] + tmp.shape[1])
+
+            tmp[loc_x_s: loc_x_e,
+                loc_y_s: loc_y_e,
+                loc[2]*mb_size[2] : (loc[2] + 1)*mb_size[2]] = data.T[sl_x,sl_y,:]
 
     return np.ascontiguousarray(np.float64(tmp))
 
