@@ -36,9 +36,9 @@ def read_fields(args):
         if args['forced']:
             accFields = ['x-acceleration','y-acceleration','z-acceleration']
 
-        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
-                                      rhoField, velFields, magFields,
-                                      accFields, pressField)
+        readAllFieldsWithYT(fields, args['data_path'], args['res'],
+                            rhoField, velFields, magFields,
+                            accFields, pressField)
 
     elif args['data_type'][:8] == 'AthenaPP':
         rhoField = ('athena_pp', 'rho')
@@ -123,60 +123,56 @@ def readAllFieldsWithYT(fields,loadPath,Res,
     Reads all fields using the yt frontend. Data is read in parallel.
 
     """
-    raise SystemExit(
-        'Reading data with yt not adapted for pencil demp yet!')
-	
-    if Res % size != 0:
+    pencil_shape = FFTHelperFuncs.local_shape
+    if (np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) % pencil_shape != 0).any():
         raise SystemExit(
             'Data cannot be split evenly among processes. ' +
             'Abort (for now) - fix me!')
 
-    FinalShape = (Res//size,Res,Res)   
-
     ds = yt.load(loadPath)
-    dims = ds.domain_dimensions
     left_edge = ds.domain_left_edge
     right_edge = ds.domain_right_edge
 
-    dims[0] /= size
+    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+    gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
+    gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
     start_pos = left_edge
-    start_pos[0] += rank * (right_edge[0] - left_edge[0])/np.float(size)
+    start_pos[0] += gid_x_s / Res * (right_edge[0] - left_edge[0])
+    start_pos[1] += gid_y_s / Res * (right_edge[1] - left_edge[1])
     if rank == 0:
         print("Loading "+ loadPath)
-        print("Chunk dimensions = ", FinalShape)
-        print("WARNING: remember assuming domain of L = 1")
+        print("Chunk dimensions = ", pencil_shape)
 
 
-    ad = ds.h.covering_grid(level=0, left_edge=start_pos,dims=dims)
+    ad = ds.h.covering_grid(level=0, left_edge=start_pos,dims=FFTHelperFuncs.local_shape)
 
     if rhoField is not None:
         fields['rho'] = ad[rhoField].d
 
     if pressField is not None:
         fields['P'] = ad[pressField].d
-#TODO FIXME for new layout
-#    else:
-#        if rank == 0:
-#            print("WARNING: assuming isothermal EOS with c_s = 1, i.e. P = rho")
-#        P = rho
+    else:
+        if rank == 0:
+            print("WARNING: assuming isothermal EOS with c_s = 1, i.e. P = rho")
+        fields['P'] = fields['rho']
     
     if velFields is not None:
-        U = np.zeros((3,) + FinalShape,dtype=np.float64)
+        U = np.zeros((3,) + pencil_shape,dtype=np.float64)
         U[0] = ad[velFields[0]].d
         U[1] = ad[velFields[1]].d
         U[2] = ad[velFields[2]].d
         fields['U'] = U
 
     if magFields is not None:
-        B = np.zeros((3,) + FinalShape,dtype=np.float64)  
+        B = np.zeros((3,) + pencil_shape,dtype=np.float64)
         B[0] = ad[magFields[0]].d
         B[1] = ad[magFields[1]].d
         B[2] = ad[magFields[2]].d
         fields['B'] = B
 
     if accFields is not None:
-        Acc = np.zeros((3,) + FinalShape,dtype=np.float64)  
+        Acc = np.zeros((3,) + pencil_shape,dtype=np.float64)
         Acc[0] = ad[accFields[0]].d
         Acc[1] = ad[accFields[1]].d
         Acc[2] = ad[accFields[2]].d
