@@ -23,7 +23,7 @@ FFT = None
 local_wavenumbermesh = None
 local_shape = None
 
-def setup_fft(res):
+def setup_fft(res, dtype=np.complex128):
     """ Setup shared FFT object and properties
         res - linear resolution
     """
@@ -44,7 +44,7 @@ def setup_fft(res):
     N = np.array([res, res, res], dtype=int)
     # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
     L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
-    FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=np.complex128)
+    FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=dtype)
 
     local_wavenumbermesh = get_local_wavenumbermesh(FFT, L)
     local_shape = newDistArray(FFT,False).shape

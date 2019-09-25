@@ -50,10 +50,7 @@ class EnergyTransfer:
             tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant,0.)
             Quant_X = self.FFT.backward(tmp,Quant_X)        
 
-        if (np.abs(Quant_X.imag) > 1e-14).any():
-            raise SystemExit('Result of inverse transform has imag values != 0.')
-
-        return Quant_X.real
+        return Quant_X
     
     
     def populateResultDict(self,Result,KBins,formalism,Terms,method):

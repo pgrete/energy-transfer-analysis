@@ -183,8 +183,15 @@ if args['eos'] == 'adiabatic':
 else:
     gamma = None
 
-# setup FFTs
-FFTHelperFuncs.setup_fft(args['res'])
+# Setup FFTs. Using real->complex transforms for performance in the transfer
+# analysis and because all quantities are also transformed back.
+# Using complex->complex transforms for the flow analysis so that the total
+# power in real and spectral space is identical without normalizing for
+# power in the complex conjugate modes.
+if args['type'] == 'transfer':
+    FFTHelperFuncs.setup_fft(args['res'], dtype=np.float64)
+else:
+    FFTHelperFuncs.setup_fft(args['res'], dtype=np.complex128)
 
 # Load data to data dictionary
 fields = read_fields(args)
