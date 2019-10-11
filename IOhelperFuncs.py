@@ -100,9 +100,9 @@ def read_fields(args):
 
         order = 'C'
 
-        fields  = readAllFieldsWithYT(args['data_path'], args['res'],
-                                      rhoField, velFields, magFields,
-                                      accFields, pressField)
+        readAllFieldsWithYT(fields, args['data_path'], args['res'],
+                            rhoField, velFields, magFields,
+                            accFields, pressField)
 
     else:
         raise SystemExit('Unknown data type: ', data_type)
