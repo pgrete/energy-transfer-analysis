@@ -1,6 +1,6 @@
 import numpy as np
-from mpi4py_fft import PFFT, newDistArray
-from FFTHelperFuncs import get_local_wavenumbermesh
+import FFTHelperFuncs
+from mpi4py_fft import newDistArray
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX
 import time
 import pickle
@@ -32,34 +32,11 @@ class EnergyTransfer:
         self.FT_P = None
         self.FT_rho = None
         self.FT_U = None
-        
-        if self.comm.Get_rank() == 0:
-            print("""!!! WARNING - CURRENT PITFALLS !!!
-            - data units are ignored
-            - data is assumed to live on a 3d uniform grid with L = 1
-            - for the FFT L = 2 pi is implicitly assumed to work with integer wavenumbers
-            - data is assumed to be split equally on axis 0 among MPI processes            
-            """)
 
-        TimeStart = MPI.Wtime()
-        
-        N = np.array([RES,RES,RES], dtype=int)
-        # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
-        L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
-        self.FFT = PFFT(self.comm,N, axes=(0,1,2),collapse=False, slab=True,dtype=np.float64)
+        self.FFT = FFTHelperFuncs.FFT
+        self.localKmag = np.linalg.norm(FFTHelperFuncs.local_wavenumbermesh,axis=0)
 
-        localK = get_local_wavenumbermesh(self.FFT, L)
-        self.localKmag = np.linalg.norm(localK,axis=0)
 
-        TimeDoneSetup = MPI.Wtime() - TimeStart
-        TimeDoneSetup = self.comm.gather(TimeDoneSetup)
-
-        if self.comm.Get_rank() == 0:
-            print("Setup up FFT and wavenumbers done in %.3g +/- %.3g" %
-                (np.mean(TimeDoneSetup), np.std(TimeDoneSetup)))
-            sys.stdout.flush()
-        
-        
     def getShellX(self,FTquant,Low,Up):
         """ extracts shell X-0.5 < K <X+0.5 of FTquant """
 

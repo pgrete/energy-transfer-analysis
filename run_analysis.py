@@ -1,11 +1,13 @@
 import argparse
 from mpi4py import MPI
+import FFTHelperFuncs
 from IOhelperFuncs import read_fields 
 from EnergyTransfer import EnergyTransfer
 from FlowAnalysis import FlowAnalysis
 import os
 import sys
 import pickle
+import numpy as np
 
 analysis_description = (
     "MPI parallel turbulence simulation analysis"
@@ -32,7 +34,7 @@ parser.add_argument('--type',
 parser.add_argument('--data_type',
                     required=True,
                     type=str,
-                    choices=['Enzo', 'AthenaPP', 'AthenaHDFC', 'Athena'],
+                    choices=['Enzo', 'AthenaPP', 'AthenaPPHDF', 'AthenaHDFC', 'Athena'],
                     help='set data cube type')
 
 parser.add_argument('--data_path',
@@ -120,6 +122,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 # Parse energy transfer arguments
+resolution = args['res']
 if args['type'] == 'transfer':
     magnetic_terms = ['BB', 'BUT', 'BUP', 'UBT', 'UBPb']
     terms_to_analyze = args['terms']
@@ -175,15 +178,22 @@ if args['outfile'] is None and args['type'] != 'unit-test':
     raise SystemExit('Outfile required for analysis.')
 
 outfile = args['outfile']
-resolution = args['res']
 if args['eos'] == 'adiabatic':
     gamma = args['gamma']
 else:
     gamma = None
 
-# Load data
+# Setup FFTs. Using real->complex transforms for performance in the transfer
+# analysis and because all quantities are also transformed back.
+# Using complex->complex transforms for the flow analysis so that the total
+# power in real and spectral space is identical without normalizing for
+# power in the complex conjugate modes.
+if args['type'] == 'transfer':
+    FFTHelperFuncs.setup_fft(args['res'], dtype=np.float64)
+else:
+    FFTHelperFuncs.setup_fft(args['res'], dtype=np.complex128)
 
-# data dictionary
+# Load data to data dictionary
 fields = read_fields(args)
 
 # Run energy transfer analysis

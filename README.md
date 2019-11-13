@@ -55,7 +55,7 @@ In general the following parameters are available
 Use the `run_analysis.py` script with the `--flow transfer` option.
 For example (to run the transfer analysis on the regression data set),
 ```
-srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test-out.pkl --eos adiabatic --gamma 1.0001  -forced -b --kernels Gauss
+srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test-out.pkl --eos adiabatic --gamma 1.0001  -forced -b
 ```
 
 ## Turbulent flow analysis
@@ -74,7 +74,7 @@ srun -n 8 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --dat
   - with different definitions of kinetic energy density
     - $E(k) = \sqrt(\rho u)^2$ (Grete, et al., 2017)
     - $E(k) = |\overline{\rho u_l}|^2 / 2\rho_l$ (Sadek & Aluie, 2018)
-       - must specify convolution kernel type with `--kernel`
+       - must specify convolution kernel type with `--kernels`
 - Dispersion measures, rotation measures and line of sight magnetic field along all axes
 
 ## Usage
@@ -82,7 +82,7 @@ Use the `run_analysis.py` script with the `--flow flow` option.
 For example (to analyze a driven turbulence hydro simulation with an isothermal equation of state),
 For example,
 ```
-srun -n 8 python ./run_analysis.py --res 256 --data_path /PATH/TO/SIM/DUMP  --data_type Athena --type flow --eos isothermal --outfile /PATH/TO/OUTFILE.hdf5 -forced
+srun -n 8 python ./run_analysis.py --res 256 --data_path /PATH/TO/SIM/DUMP  --data_type Athena --type flow --eos isothermal --outfile /PATH/TO/OUTFILE.hdf5 -forced --kernels Gauss
 ```
 
 ### Sample analysis
