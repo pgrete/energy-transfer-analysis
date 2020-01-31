@@ -40,6 +40,21 @@ def read_fields(args):
                             rhoField, velFields, magFields,
                             accFields, pressField)
 
+    if args['data_type'] == 'Flash':
+        rhoField = "dens"
+        velFields = ["velx","vely","velz"]
+        if args['b']:
+            magFields = ["magx","magy","magz"]
+        if args['forced']:
+            accFields = ['accx','accy','accz']
+        if args['eos'] == 'adiabatic':
+            pressField = ('gas', 'pressure')
+
+        readAllFieldsWithYT(fields, args['data_path'], args['res'],
+                            rhoField, velFields, magFields,
+                            accFields, pressField)
+
+
     elif args['data_type'][:8] == 'AthenaPP':
         rhoField = ('athena_pp', 'rho')
         velFields = [('athena_pp', 'vel1'), ('athena_pp', 'vel2'), ('athena_pp', 'vel3')]
