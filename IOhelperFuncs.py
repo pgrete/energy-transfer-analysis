@@ -59,13 +59,17 @@ def read_fields(args):
         if args['eos'] == 'adiabatic':
             pressField = ('athena_pp', 'press')
 
-        if 'HDF' in args['data_type']:
+        if 'HDF' == args['data_type'][-3:]:
             readAllFieldsWithHDF(fields,'./Turb.prim.' + args['data_path'], args['res'],
                                 rhoField, velFields, magFields,
                                 None, pressField,'F',use_athena_hdf=True)
             readAllFieldsWithHDF(fields,'./Turb.acc.' + args['data_path'], args['res'],
                                 None, None, None,
                                 accFields, None,'F',use_athena_hdf=True)
+        elif 'HDFC' == args['data_type'][-4:]:
+            readAllFieldsWithHDF(fields,args['data_path'], args['res'],
+                                rhoField, velFields, magFields,
+                                accFields, pressField,'C')
         else:
             readAllFieldsWithYT(fields,'./Turb.prim.' + args['data_path'], args['res'],
                                 rhoField, velFields, magFields,
@@ -185,6 +189,10 @@ def readAllFieldsWithYT(fields,loadPath,Res,
 
 
 def readOneFieldWithHDF(loadPath,FieldName,Res,order):
+    pencil_shape = FFTHelperFuncs.local_shape
+    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+    gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
+    gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
     if order == 'F':
         Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
@@ -201,21 +209,11 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
             data = comm.scatter(None)
 
     elif order == 'C':
-        pencil_shape = FFTHelperFuncs.local_shape
-        if (np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) % pencil_shape != 0).any():
-            raise SystemExit(
-                'Data cannot be split evenly among processes. ' +
-                'Abort (for now) - fix me!')
-
-        n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
-        gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
-        gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
-
-        Filename = loadPath + '/' + FieldName + '-' + str(Res) + '-C.hdf5'
-
-        h5Data = h5py.File(Filename, 'r')[FieldName]
-        data = np.float64(h5Data[0,
-                                 gid_x_s:gid_x_s+pencil_shape[0],
+# TODO(pgrete): fix this to work with AthenaC data again
+        # stripping the yt field type
+        FieldName = FieldName[1]
+        h5Data = h5py.File(loadPath, 'r')[FieldName]
+        data = np.float64(h5Data[gid_x_s:gid_x_s+pencil_shape[0],
                                  gid_y_s:gid_y_s+pencil_shape[1],
                                  :])
 
