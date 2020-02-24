@@ -36,8 +36,8 @@ In general the following parameters are available
 -  `-forced`               output is actively forced
 -  `--eos {isothermal,adiabatic}` set equation of state
 -  `--gamma GAMMA`         set adiabatic gamma index
--   `-approx-isothermal`    assume c_s^2 / gamma = p/rho = 1
--   `--terms {All,Int,UU,BUT,BUP,UBT,UBPb,BB,BUPbb,UBPbb,SS,SU,US,PU,FU}` set energy transfer terms to analyze
+-  `--cs CS`               set speed of sound for isothermal EOS
+-  `--terms {All,Int,UU,BUT,BUP,UBT,UBPb,BB,BUPbb,UBPbb,SS,SU,US,PU,FU}` set energy transfer terms to analyze
 -  `--binning {log,lin,test}`  set binning used in energy transfer analysis
    - `lin` leads to linearly equally spaced bins with boundaries at $k = 0.5,1.5,2.5,...,Res/2$
    - `log` leads to logarithmically equally spaced bins with boundaries at $k = 0, 4 * 2^{(i - 1)/4},Res/2$

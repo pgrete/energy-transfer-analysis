@@ -1,7 +1,7 @@
 import numpy as np
 import FFTHelperFuncs
 
-def MPIderiv2(comm,var,dim):
+def MPIderiv2(comm,var,dim,deriv=1):
     """Returns first derivative (2-point central finite difference)
     
     of a 3-dimensional, real space, uniform grid (with L = 1) variable.
@@ -11,6 +11,7 @@ def MPIderiv2(comm,var,dim):
         comm -- MPI world communicator
         var -- input field 
         dim -- axis along the derivative should be taken   
+        deriv (int) -- first (default) or second derivative
     """
     
     rank = comm.Get_rank()
@@ -19,7 +20,6 @@ def MPIderiv2(comm,var,dim):
     sl_m1 = slice(None,-2,None)
     sl_p1 = slice(2,None,None)
     sl_c = slice(1,-1,None)
-    ds = 2.0/float(var.shape[2]) # assumes axis 2 covers entire grid with L = 1
     N = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int)
     loc_slc = FFTHelperFuncs.local_shape
     n_proc = N // loc_slc
@@ -36,6 +36,7 @@ def MPIderiv2(comm,var,dim):
 
         tmp = np.concatenate((leftSlice,var,rightSlice),axis=0)
         p1 = tmp[sl_p1,:,:]
+        c0 = tmp[sl_c,:,:]
         m1 = tmp[sl_m1,:,:]
     elif (dim == 1):
         next_proc = (rank + 1) % n_proc[1] + (rank // n_proc[1]) * n_proc[1]
@@ -49,18 +50,26 @@ def MPIderiv2(comm,var,dim):
 
         tmp = np.concatenate((leftSlice,var,rightSlice),axis=1)
         p1 = tmp[:,sl_p1,:]
+        c0 = tmp[:,sl_c,:]
         m1 = tmp[:,sl_m1,:]
     elif (dim == 2):
         # nothing special required here as we do pencil decomp in x-y
         tmp = np.concatenate((var[:,:,-1:],var,var[:,:,:1]),axis=2)
         p1 = tmp[:,:,sl_p1]
+        c0 = tmp[:,:,sl_c]
         m1 = tmp[:,:,sl_m1]
     else:
         print("watch out for dimension!")
                 
     del tmp 
-            
-    return np.array((p1 - m1)/ds)
+
+    dx = 1.0 / float(var.shape[2])  # assumes axis 2 covers entire grid with L = 1
+    if (deriv == 1):
+        return np.array((p1 - m1)/(2.*dx))
+    elif (deriv == 2):
+        return np.array((m1 - 2.0 * c0 + p1)/dx**2.)
+    else:
+        raise SystemExit('Unknown derivative')
 
 def MPIXdotGradYScalar(comm,X,Y):
     """ returns  (X . grad) Y
@@ -110,3 +119,16 @@ def MPIrotX(comm,X):
                      MPIderiv2(comm,X[0],2) - MPIderiv2(comm,X[2],0),
                      MPIderiv2(comm,X[1],0) - MPIderiv2(comm,X[0],1),
                      ])
+def MPIVecLaplacian(comm, X):
+    """ return the vector Laplacian of the vector X
+    """
+
+    return np.array([(MPIderiv2(comm,X[0],0,deriv=2) +
+                      MPIderiv2(comm,X[0],1,deriv=2) +
+                      MPIderiv2(comm,X[0],2,deriv=2)),
+                     (MPIderiv2(comm,X[1],0,deriv=2) +
+                      MPIderiv2(comm,X[1],1,deriv=2) +
+                      MPIderiv2(comm,X[1],2,deriv=2)),
+                     (MPIderiv2(comm,X[2],0,deriv=2) +
+                      MPIderiv2(comm,X[2],1,deriv=2) +
+                      MPIderiv2(comm,X[2],2,deriv=2))])

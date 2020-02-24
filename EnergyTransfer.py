@@ -1,7 +1,7 @@
 import numpy as np
 import FFTHelperFuncs
 from mpi4py_fft import newDistArray
-from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX
+from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIVecLaplacian
 import time
 import pickle
 import sys
@@ -109,7 +109,7 @@ class EnergyTransfer:
             for i in range(3):
                 self.W[i] = np.sqrt(rho) * U[i]
 
-        if self.S is None and P is not None:
+        if self.S is None and self.gamma is not None and P is not None:
             self.S = np.sqrt(self.gamma*P)
 
         if self.FT_W is None:
@@ -117,6 +117,11 @@ class EnergyTransfer:
             for i in range(3):
                 self.FT_W[i] = self.FFT.forward(self.W[i], self.FT_W[i])            
             
+        if self.FT_U is None:
+            self.FT_U = newDistArray(self.FFT,rank=1)
+            for i in range(3):
+                self.FT_U[i] = self.FFT.forward(self.U[i], self.FT_U[i])
+
         if self.FT_B is None and self.B is not None:
             self.FT_B = newDistArray(self.FFT,rank=1)
             for i in range(3):
@@ -159,6 +164,7 @@ class EnergyTransfer:
         S = self.S
         W = self.W
         FT_W = self.FT_W
+        FT_U = self.FT_U
         FT_S = self.FT_S
         FT_B = self.FT_B
         FT_P = self.FT_P
@@ -168,6 +174,7 @@ class EnergyTransfer:
 
         # clear Q terms
         W_Q = None
+        U_Q = None
         S_Q = None
         B_Q = None
         SDivW_QoverGammaSqrtRho = None
@@ -189,6 +196,9 @@ class EnergyTransfer:
         BDivW_Qover2SqrtRho = None
         OneOverSqrtRhoGradP_Q = None
         SqrtRhoAcc_Q = None
+        SqrtRhoDeltaU_Q = None
+        DeltaB_Q = None
+        GradDivU_Q = None
         
         DivU = None
         b = None
@@ -618,6 +628,72 @@ class EnergyTransfer:
                         self.addResultToDict(Result,"WW","FU","AnyToAny",KBin,QBin,totalSum)
                         print("done with FU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
 
+                # W_K sqrt(rho) nu Delta U_Q (nu is not used here, but later
+                # determined empirically
+                if "nuU" in Terms:
+
+                    if U_Q is None:
+                        U_Q = self.getShellX(FT_U,QBins[q],QBins[q+1])
+
+                    if SqrtRhoDeltaU_Q is None:
+                        SqrtRhoDeltaU_Q = np.sqrt(rho) * MPIVecLaplacian(self.comm,U_Q)
+
+                    if W_K is None:
+                        W_K = self.getShellX(FT_W,KBins[k],KBins[k+1])
+
+                    localSum = np.sum(W_K * SqrtRhoDeltaU_Q)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","nuU","AnyToAny",KBin,QBin,totalSum)
+                        print("done with nuU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
+
+                # W_K sqrt(rho) nu 1/3 grad div U_Q (nu is not used here, but later
+                # determined empirically
+                if "nuDivU" in Terms:
+
+                    if U_Q is None:
+                        U_Q = self.getShellX(FT_U,QBins[q],QBins[q+1])
+
+                    if GradDivU_Q is None:
+                        GradDivU_Q = MPIgradX(self.comm,MPIdivX(self.comm,U_Q))
+
+                    if W_K is None:
+                        W_K = self.getShellX(FT_W,KBins[k],KBins[k+1])
+
+                    localSum = np.sum(W_K * GradDivU_Q / 3.0)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","nuDivU","AnyToAny",KBin,QBin,totalSum)
+                        print("done with nuDivU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
+
+                # B_K eta Delta B_Q (eta is not used here, but later
+                # determined empirically
+                if "etaB" in Terms:
+
+                    if B_Q is None:
+                        B_Q = self.getShellX(FT_B,QBins[q],QBins[q+1])
+
+                    if DeltaB_Q is None:
+                        DeltaB_Q = MPIVecLaplacian(self.comm, B_Q)
+
+                    if B_K is None:
+                        B_K = self.getShellX(FT_B,KBins[k],KBins[k+1])
+
+                    localSum = np.sum(B_K * DeltaB_Q)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","etaB","AnyToAny",KBin,QBin,totalSum)
+                        print("done with etaB for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
+
                 # clear K terms
                 W_K = None
                 S_K = None
@@ -626,6 +702,7 @@ class EnergyTransfer:
 
             # clear Q terms
             W_Q = None
+            U_Q = None
             S_Q = None
             B_Q = None
             OneOverTwoSqrtRhogradBB_Q = None
@@ -647,6 +724,9 @@ class EnergyTransfer:
             BDivW_Qover2SqrtRho = None
             OneOverSqrtRhoGradP_Q = None
             SqrtRhoAcc_Q = None
+            SqrtRhoDeltaU_Q = None
+            DeltaB_Q = None
+            GradDivU_Q = None
             
             Str = ""
             for Term in Terms:

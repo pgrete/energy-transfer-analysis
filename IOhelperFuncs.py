@@ -9,6 +9,7 @@ import h5py
 comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
+eos = 'unset'
 
 def read_fields(args):
     """
@@ -26,6 +27,9 @@ def read_fields(args):
     magFields = None
     accFields = None
 
+    global eos
+    eos = args['eos']
+
     time_start = MPI.Wtime()
 
     if args['data_type'] == 'Enzo':
@@ -35,6 +39,8 @@ def read_fields(args):
             magFields = ["Bx","By","Bz"]
         if args['forced']:
             accFields = ['x-acceleration','y-acceleration','z-acceleration']
+        if args['eos'] == 'adiabatic':
+            pressField = 'pressure'
 
         readAllFieldsWithYT(fields, args['data_path'], args['res'],
                             rhoField, velFields, magFields,
@@ -83,9 +89,9 @@ def read_fields(args):
 
         order = 'C'
 
-        fields  = readAllFieldsWithHDF(args['data_path'], args['res'],
-                                       rhoField, velFields, magFields,
-                                       accFields, pressField,order)
+        readAllFieldsWithHDF(fields,args['data_path'], args['res'],
+                             rhoField, velFields, magFields,
+                             accFields, pressField,order)
 
     elif args['data_type'] == 'Athena':
         rhoField = 'density'
@@ -114,6 +120,9 @@ def read_fields(args):
         print("Reading data done in %.3g +/- %.3g" %
             (np.mean(time_elapsed), np.std(time_elapsed)))
         sys.stdout.flush()
+
+    if args['eos'] == 'isothermal':
+        fields['P'] = args['cs']**2. * fields['rho']
 
     return fields
 
@@ -152,11 +161,7 @@ def readAllFieldsWithYT(fields,loadPath,Res,
 
     if pressField is not None:
         fields['P'] = ad[pressField].d
-    else:
-        if rank == 0:
-            print("WARNING: assuming isothermal EOS with c_s = 1, i.e. P = rho")
-        fields['P'] = fields['rho']
-    
+
     if velFields is not None:
         U = np.zeros((3,) + pencil_shape,dtype=np.float64)
         U[0] = ad[velFields[0]].d
@@ -196,16 +201,23 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
             data = comm.scatter(None)
 
     elif order == 'C':
+        pencil_shape = FFTHelperFuncs.local_shape
+        if (np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) % pencil_shape != 0).any():
+            raise SystemExit(
+                'Data cannot be split evenly among processes. ' +
+                'Abort (for now) - fix me!')
+
+        n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+        gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
+        gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
+
         Filename = loadPath + '/' + FieldName + '-' + str(Res) + '-C.hdf5'
-        
-        chunkSize = Res/size
-        startIdx = int(rank * chunkSize)
-        endIdx = int((rank + 1) * chunkSize)
-        if endIdx == Res:                
-            endIdx = None
-        
+
         h5Data = h5py.File(Filename, 'r')[FieldName]
-        data = np.float64(h5Data[0,startIdx:endIdx,:,:])
+        data = np.float64(h5Data[0,
+                                 gid_x_s:gid_x_s+pencil_shape[0],
+                                 gid_y_s:gid_y_s+pencil_shape[1],
+                                 :])
 
     if rank == 0:
         print("[%03d] done reading %s" % (rank,FieldName))
@@ -244,7 +256,13 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
             field_idx = 1
             ds_name = 'prim'
         elif 'vel' in FieldName:
-            field_idx = 1 + int(FieldName[-1])
+            if eos == 'isothermal':
+                offset = 0
+            elif eos == 'adiabatic':
+                offset = 1
+            else:
+                raise SystemExit('Unknown eos: ', eos)
+            field_idx = offset + int(FieldName[-1])
             ds_name = 'prim'
         elif 'Bcc' in FieldName:
             field_idx = int(FieldName[-1]) - 1
@@ -360,9 +378,3 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
 
     if pField is not None:
         fields['P'] = readOneFieldWithX(loadPath,pField,Res,order)
-#TODO FIXME for new layout
-#    else:
-#        # CAREFUL assuming isothermal EOS here with c_s = 1 -> P = rho in code units
-#        if rank == 0:
-#            print("WARNING: remember assuming isothermal EOS with c_s = 1, i.e. P = rho")
-#        P = rho

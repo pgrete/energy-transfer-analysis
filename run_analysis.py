@@ -47,6 +47,12 @@ parser.add_argument('--outfile',
                     default=None,
                     help='set file to store results')
 
+parser.add_argument('--num_bins',
+                    type=int,
+                    default=128,
+                    help='set number of bins for histograms in flow analysis')
+
+
 parser.add_argument('--extrema_file',
                     type=str,
                     help='Pickled Python dict containing extrema for flow analysis')
@@ -72,19 +78,19 @@ parser.add_argument('--gamma',
                     default=None,
                     help='set adiabatic gamma index')
 
-
-parser.add_argument('-approx-isothermal',
-                    action='store_true',
-                    default=False,
-                    help='assume c_s^2 / gamma = p/rho = 1')
-                       
+parser.add_argument('--cs',
+                    type=float,
+                    default=None,
+                    help='set speed of sound for isothermal EOS')
 
 parser.add_argument('--terms',
                     type=str,
                     nargs='+',
                     default=None,
                     choices = ['All', 'Int', 'UU', 'BUT', 'BUP', 'UBT', 'UBPb',
-                               'BB', 'BUPbb', 'UBPbb', 'SS', 'SU', 'US', 'PU', 'FU'],
+                               'BB', 'BUPbb', 'UBPbb', 'SS', 'SU', 'US', 'PU', 'FU',
+                               'nuU', 'nuDivU', 'etaB',
+                               ],
                     help='set energy transfer terms to analyze')
 
 parser.add_argument('--binning',
@@ -106,6 +112,9 @@ args = vars(parser.parse_args())
 if args['eos'] == 'adiabatic' and args['gamma'] == None:
     raise SystemExit('Please set gamma for when using adiabatic EOS')
 
+if args['eos'] == 'isothermal' and args['cs'] == None:
+    raise SystemExit('Please set speed of sound for when using isothermal EOS')
+
 # Check energy transfer arguments
 if args['type'] != 'transfer' and args['terms'] != None:
     raise SystemExit('--terms to analyze set but --type is not transfer')
@@ -116,6 +125,9 @@ if args['type'] == 'transfer' and args['terms'] == None:
 if args['type'] == 'transfer' and args['binning'] == None:
     raise SystemExit('Asking for energy transfer analysis but no binnig chosen')
 
+if args['type'] == 'transfer' and args['eos'] == 'isothermal' and 'Int' in args['terms']:
+    raise SystemExit('Internal energy transfers cannot be calculaed for isothermal sims.')
+
 # Set mpi vars
 comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -124,11 +136,11 @@ size = comm.Get_size()
 # Parse energy transfer arguments
 resolution = args['res']
 if args['type'] == 'transfer':
-    magnetic_terms = ['BB', 'BUT', 'BUP', 'UBT', 'UBPb']
+    magnetic_terms = ['BB', 'BUT', 'BUP', 'UBT', 'UBPb', 'etaB']
     terms_to_analyze = args['terms']
 
     if 'All' in terms_to_analyze:
-        terms_to_analyze += ['UU']
+        terms_to_analyze += ['UU', 'nuU', 'nuDivU']
         if args['b']:
             terms_to_analyze += magnetic_terms
         
@@ -223,7 +235,7 @@ if args['type'] == 'transfer':
         pickle.dump(results,open(outfile,"wb"))    
 
 elif args['type'] == 'flow':
-    
+
     FA = FlowAnalysis(MPI,args,fields)
     FA.run_analysis()
 

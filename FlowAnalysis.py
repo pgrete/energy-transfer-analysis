@@ -27,11 +27,13 @@ class FlowAnalysis:
                 self.global_min_max = pickle.load(open(args['extrema_file'], 'rb'))
                 if self.rank == 0:
                     print("Successfully loaded global extrema dict: %s" %
-                          self.global_min_maxFile)
+                          args['extrema_file'])
             except FileNotFoundError:
                 raise SystemExit('Extrema file not found: ', args['extrema_file'])
         else:
             self.global_min_max = {}
+
+        self.num_bins = args['num_bins']
 
         self.rho = fields['rho']
         self.U = fields['U']
@@ -40,6 +42,7 @@ class FlowAnalysis:
         self.P = fields['P']
         self.eos = args['eos']
         self.gamma = args['gamma']
+        self.cs = args['cs']
         self.has_b_fields = args['b']
         self.kernels= args['kernels']
 
@@ -48,10 +51,14 @@ class FlowAnalysis:
 
         # maximum integer wavenumber
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))
-        self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)
-        # if max k does not fall in last bin, remove last bin
-        if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
-            self.k_bins = self.k_bins[:-1]
+#        self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)
+#        # if max k does not fall in last bin, remove last bin
+#        if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
+#            self.k_bins = self.k_bins[:-1]
+
+        resolution_exp = np.log(self.res/8)/np.log(2) * 4 + 1
+        self.k_bins = np.concatenate(
+            (np.array([0.]), 4.* 2** ((np.arange(0,resolution_exp + 1) - 1.) /4.)))
 
         self.FFT = FFTHelperFuncs.FFT
         self.localK = FFTHelperFuncs.local_wavenumbermesh
@@ -154,6 +161,9 @@ class FlowAnalysis:
 
         V2 = np.sum(U**2.,axis=0)
         self.get_and_write_statistics_to_file(np.sqrt(V2),"u")
+        self.get_and_write_statistics_to_file(U[0],"u_x")
+        self.get_and_write_statistics_to_file(U[1],"u_y")
+        self.get_and_write_statistics_to_file(U[2],"u_z")
 
         self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")
         self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")
@@ -198,11 +208,7 @@ class FlowAnalysis:
                 print("Using gamma = %.3f for adiabatic EOS" % self.gamma)
             
             c_s2 = self.gamma * P / rho
-            Ms2 = V2 / (c_s2)
-            self.get_and_write_statistics_to_file(np.sqrt(Ms2),"Ms")
-            self.get_2d_hist('rho-P',rho,P)
-            self.get_and_write_statistics_to_file(P,"P")
-            self.get_and_write_statistics_to_file(np.log10(P),"log10P")
+
             T = P / (self.gamma - 1.0) /rho
             self.get_and_write_statistics_to_file(T,"T")
             self.get_and_write_statistics_to_file(np.log10(T),"log10T")
@@ -211,10 +217,24 @@ class FlowAnalysis:
             K = T/rho**(2./3.)
             self.get_2d_hist('T-K',T,K)
             self.get_2d_hist('rho-K',rho,K)
+        elif self.eos == 'isothermal':
+            if self.rank == 0:
+                print("Using c_s = %.3f for isothermal EOS" % self.cs)
+            c_s2 = self.cs**2.
+        else:
+            raise SystemExit('Unknown EOS', self.eos)
 
-            self.co_spectrum('PD',P,DivU)
+        Ms2 = V2 / (c_s2)
+        self.get_and_write_statistics_to_file(np.sqrt(Ms2),"Ms")
+        self.get_2d_hist('rho-P',rho,P)
+        self.get_and_write_statistics_to_file(P,"P")
+        self.get_and_write_statistics_to_file(np.log10(P),"log10P")
 
-            self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
+        self.co_spectrum('PD',P,DivU)
+
+        # should include factor of 1/(gamma(gamma-1))
+        self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
+        self.get_and_write_statistics_to_file(rho*c_s2,"IntEnDensity")
 
         if self.kernels is not None:
             if self.rank == 0:
@@ -233,22 +253,14 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(np.sqrt(B2),"B")
         self.get_and_write_statistics_to_file(0.5 * B2,"MagEnDensity")
 
-        if self.eos == 'adiabatic':
-            TotPres = P + B2/2.
-            corrPBcomp = self.get_corr_coeff(P,np.sqrt(B2)/rho**(2./3.))
-            self.get_2d_hist('P-B',P,np.sqrt(B2))
-            self.get_2d_hist('P-MagEnDensity',P,0.5 * B2)
+        TotPres = P + B2/2.
+        corrPBcomp = self.get_corr_coeff(P,np.sqrt(B2)/rho**(2./3.))
+        self.get_2d_hist('P-B',P,np.sqrt(B2))
+        self.get_2d_hist('P-MagEnDensity',P,0.5 * B2)
+        corrPB = self.get_corr_coeff(P,np.sqrt(B2))
+        corrPB2 = self.get_corr_coeff(P,B2)
             
-            plasmaBeta = 2.* P / B2
-        elif self.eos == 'isothermal':
-            if self.rank == 0:
-                print('Warning: assuming c_s = 1 for isothermal EOS')
-            TotPres = rho + B2/2.
-            corrPBcomp = self.get_corr_coeff(rho,np.sqrt(B2)/rho**(2./3.))
-            
-            plasmaBeta = 2.*rho/B2
-        else:
-            raise SystemExit('Unknown EOS', self.eos)
+        plasmaBeta = 2.* P / B2
 
         self.get_and_write_statistics_to_file(TotPres,"TotPres")
         self.get_and_write_statistics_to_file(plasmaBeta,"plasmabeta")
@@ -256,6 +268,8 @@ class FlowAnalysis:
 
         if self.rank == 0:
             self.outfile.require_dataset('P-Bcomp/corr', (1,), dtype='f')[0] = corrPBcomp
+            self.outfile.require_dataset('P-B/corr', (1,), dtype='f')[0] = corrPB
+            self.outfile.require_dataset('P-B2/corr', (1,), dtype='f')[0] = corrPB2
 
         AlfMach2 = V2*rho/B2
         AlfMach = np.sqrt(AlfMach2)
@@ -263,6 +277,9 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(AlfMach,"AlfvenicMach")
 
         self.vector_power_spectrum('B',B)
+        self.get_and_write_statistics_to_file(B[0],"B_x")
+        self.get_and_write_statistics_to_file(B[1],"B_y")
+        self.get_and_write_statistics_to_file(B[2],"B_z")
 
         # this is cheap... and only works for pencil decomp in z axis
         # np.sum is required for slabs with width > 1
@@ -309,11 +326,21 @@ class FlowAnalysis:
         if self.eos == 'adiabatic':
             rhoToGamma = rho**self.gamma
             corrRhoToGammaB = self.get_corr_coeff(rhoToGamma,np.sqrt(B2))
+            corrPRhoToGamma = self.get_corr_coeff(rhoToGamma,P)
+            corrTotPresRhoToGamma = self.get_corr_coeff(rhoToGamma,TotPres)
             if self.rank == 0:
                 self.outfile.require_dataset('rhoToGamma-B/corr', (1,), dtype='f')[0] = corrRhoToGammaB
+                self.outfile.require_dataset('rhoToGamma-P/corr', (1,), dtype='f')[0] = corrPRhoToGamma
+                self.outfile.require_dataset('rhoToGamma-TotPres/corr', (1,), dtype='f')[0] = corrTotPresRhoToGamma
 
             self.get_2d_hist('rhoToGamma-B',rhoToGamma,np.sqrt(B2))
             self.get_2d_hist('rhoToGamma-MagEnDensity',rhoToGamma,0.5 * B2)
+
+        corrPRho = self.get_corr_coeff(rho,P)
+        corrTotPresRho = self.get_corr_coeff(rho,TotPres)
+        if self.rank == 0:
+            self.outfile.require_dataset('rho-P/corr', (1,), dtype='f')[0] = corrPRho
+            self.outfile.require_dataset('rho-TotPres/corr', (1,), dtype='f')[0] = corrTotPresRho
 
         self.get_2d_hist('rho-B',rho,np.sqrt(B2))
         self.get_2d_hist('log10rho-B',np.log10(rho),np.sqrt(B2))
@@ -563,24 +590,24 @@ class FlowAnalysis:
         else:
             HistBins = "Sim"
 
-        Bins = np.linspace(bounds[0],bounds[1],129)
+        Bins = np.linspace(bounds[0],bounds[1],int(self.num_bins + 1))
         hist = np.histogram(field.reshape(-1),bins=Bins)[0]
         totalHist = self.comm.allreduce(hist)
 
         if self.rank == 0:
-            tmp  = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax', (2,129), dtype='f')
+            tmp  = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax', (2,int(self.num_bins + 1)), dtype='f')
             tmp[0] = Bins
             tmp[1,:-1] = totalHist.astype(float)
 
         if name in self.global_min_max.keys():
-            Bins = np.linspace(self.global_min_max[name][0],self.global_min_max[name][1],129)
+            Bins = np.linspace(self.global_min_max[name][0],self.global_min_max[name][1],int(self.num_bins + 1))
             hist = np.histogram(field.reshape(-1),bins=Bins)[0]
             totalHist = self.comm.allreduce(hist)
 
             HistBins = 'globalMinMax'
 
             if self.rank == 0:
-                tmp  = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax', (2,129), dtype='f')
+                tmp  = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax', (2,int(self.num_bins + 1)), dtype='f')
                 tmp[0] = Bins
                 tmp[1,:-1] = totalHist.astype(float)
 
@@ -610,23 +637,23 @@ class FlowAnalysis:
         else:
             HistBins = "Sim"
 
-        XBins = np.linspace(bounds[0][0],bounds[0][1],129)
-        YBins = np.linspace(bounds[1][0],bounds[1][1],129)
+        XBins = np.linspace(bounds[0][0],bounds[0][1],int(self.num_bins + 1))
+        YBins = np.linspace(bounds[1][0],bounds[1][1],int(self.num_bins + 1))
 
         hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
         totalHist = self.comm.allreduce(hist)
 
         if self.rank == 0:
-            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
+            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,int(self.num_bins + 1)), dtype='f')
             tmp[0] = XBins
             tmp[1] = YBins
-            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
+            tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (self.num_bins,self.num_bins), dtype='f')
             tmp[:,:] = totalHist.astype(float)
 
         Xname, Yname = name.split('-')
         if Xname in self.global_min_max.keys() and Yname in self.global_min_max.keys():
-            XBins = np.linspace(self.global_min_max[Xname][0],self.global_min_max[Xname][1],129)
-            YBins = np.linspace(self.global_min_max[Yname][0],self.global_min_max[Yname][1],129)
+            XBins = np.linspace(self.global_min_max[Xname][0],self.global_min_max[Xname][1],int(self.num_bins + 1))
+            YBins = np.linspace(self.global_min_max[Yname][0],self.global_min_max[Yname][1],int(self.num_bins + 1))
 
             hist = np.histogram2d(X.reshape(-1),Y.reshape(-1),bins=[XBins,YBins])[0]
             totalHist = self.comm.allreduce(hist)
@@ -634,10 +661,10 @@ class FlowAnalysis:
             HistBins = 'globalMinMax'
 
             if self.rank == 0:
-                tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,129), dtype='f')
+                tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/edges', (2,int(self.num_bins + 1)), dtype='f')
                 tmp[0] = XBins
                 tmp[1] = YBins
-                tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (128,128), dtype='f')
+                tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (self.num_bins,self.num_bins), dtype='f')
                 tmp[:,:] = totalHist.astype(float)
 
     def run_test(self):
