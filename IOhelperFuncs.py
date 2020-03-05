@@ -23,6 +23,7 @@ def read_fields(args):
         'Acc' : None,
         'P' : None,
     }
+    rhoField = None
     pressField = None
     magFields = None
     accFields = None
@@ -113,6 +114,24 @@ def read_fields(args):
         readAllFieldsWithYT(fields, args['data_path'], args['res'],
                             rhoField, velFields, magFields,
                             accFields, pressField)
+
+    elif args['data_type'] == 'JHTDB':
+        velFields = [(None,'vel_0'), (None,'vel_1'), (None,'vel_2')]
+        if args['b']:
+            magFields = [(None,'B_0'), (None,'B_1'), (None,'B_2')]
+
+        if args['eos'] == 'adiabatic':
+            pressField = (None, 'pressure')
+
+        order = 'C'
+
+        readAllFieldsWithHDF(fields,args['data_path'], args['res'],
+                             rhoField, velFields, magFields,
+                             accFields, pressField,order)
+
+        # allow analysis to run with incompressible data
+        fields['rho'] = np.ones(fields['U'][0].shape,dtype=np.float64)
+
 
     else:
         raise SystemExit('Unknown data type: ', data_type)
