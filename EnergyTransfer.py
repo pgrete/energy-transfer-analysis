@@ -197,7 +197,9 @@ class EnergyTransfer:
         OneOverSqrtRhoGradP_Q = None
         SqrtRhoAcc_Q = None
         SqrtRhoDeltaU_Q = None
+        SqrtRhoDelta2U_Q = None
         DeltaB_Q = None
+        Delta2B_Q = None
         GradDivU_Q = None
         
         DivU = None
@@ -635,8 +637,41 @@ class EnergyTransfer:
                     if U_Q is None:
                         U_Q = self.getShellX(FT_U,QBins[q],QBins[q+1])
 
-                    if SqrtRhoDeltaU_Q is None:
-                        SqrtRhoDeltaU_Q = np.sqrt(rho) * MPIVecLaplacian(self.comm,U_Q)
+                    if SqrtRhoDeltaU_Q is None or SqrtRhoDelta2U_Q is None:
+                        d2U_Q0dxx = MPIderiv2(self.comm,U_Q[0],0,deriv=2)
+                        d2U_Q0dyy = MPIderiv2(self.comm,U_Q[0],1,deriv=2)
+                        d2U_Q0dzz = MPIderiv2(self.comm,U_Q[0],2,deriv=2)
+                        d2U_Q1dxx = MPIderiv2(self.comm,U_Q[1],0,deriv=2)
+                        d2U_Q1dyy = MPIderiv2(self.comm,U_Q[1],1,deriv=2)
+                        d2U_Q1dzz = MPIderiv2(self.comm,U_Q[1],2,deriv=2)
+                        d2U_Q2dxx = MPIderiv2(self.comm,U_Q[2],0,deriv=2)
+                        d2U_Q2dyy = MPIderiv2(self.comm,U_Q[2],1,deriv=2)
+                        d2U_Q2dzz = MPIderiv2(self.comm,U_Q[2],2,deriv=2)
+
+                        SqrtRhoDeltaU_Q = np.sqrt(rho) * np.array(
+                            [d2U_Q0dxx + d2U_Q0dyy + d2U_Q0dzz,
+                             d2U_Q1dxx + d2U_Q1dyy + d2U_Q1dzz,
+                             d2U_Q2dxx + d2U_Q2dyy + d2U_Q2dzz])
+
+                        d4U_Q0dxxxx = MPIderiv2(self.comm,d2U_Q0dxx,0,deriv=2)
+                        d4U_Q0dyyyy = MPIderiv2(self.comm,d2U_Q0dyy,1,deriv=2)
+                        d4U_Q0dzzzz = MPIderiv2(self.comm,d2U_Q0dzz,2,deriv=2)
+                        d4U_Q1dxxxx = MPIderiv2(self.comm,d2U_Q1dxx,0,deriv=2)
+                        d4U_Q1dyyyy = MPIderiv2(self.comm,d2U_Q1dyy,1,deriv=2)
+                        d4U_Q1dzzzz = MPIderiv2(self.comm,d2U_Q1dzz,2,deriv=2)
+                        d4U_Q2dxxxx = MPIderiv2(self.comm,d2U_Q2dxx,0,deriv=2)
+                        d4U_Q2dyyyy = MPIderiv2(self.comm,d2U_Q2dyy,1,deriv=2)
+                        d4U_Q2dzzzz = MPIderiv2(self.comm,d2U_Q2dzz,2,deriv=2)
+
+                        SqrtRhoDelta2U_Q = np.sqrt(rho) * np.array(
+                            [d4U_Q0dxxxx + d4U_Q0dyyyy + d4U_Q0dzzzz,
+                             d4U_Q1dxxxx + d4U_Q1dyyyy + d4U_Q1dzzzz,
+                             d4U_Q2dxxxx + d4U_Q2dyyyy + d4U_Q2dzzzz])
+
+                        del d2U_Q0dxx,d2U_Q0dyy,d2U_Q0dzz,d2U_Q1dxx,d2U_Q1dyy,d2U_Q1dzz
+                        del d2U_Q2dxx,d2U_Q2dyy,d2U_Q2dzz,d4U_Q0dxxxx,d4U_Q0dyyyy
+                        del d4U_Q0dzzzz,d4U_Q1dxxxx,d4U_Q1dyyyy,d4U_Q1dzzzz
+                        del d4U_Q2dxxxx,d4U_Q2dyyyy,d4U_Q2dzzzz
 
                     if W_K is None:
                         W_K = self.getShellX(FT_W,KBins[k],KBins[k+1])
@@ -649,6 +684,15 @@ class EnergyTransfer:
                     if self.comm.Get_rank() == 0:
                         self.addResultToDict(Result,"WW","nuU","AnyToAny",KBin,QBin,totalSum)
                         print("done with nuU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
+
+                    localSum = np.sum(W_K * SqrtRhoDelta2U_Q)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","nu2U","AnyToAny",KBin,QBin,totalSum)
+                        print("done with nu2U for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
 
                 # W_K sqrt(rho) nu 1/3 grad div U_Q (nu is not used here, but later
                 # determined empirically
@@ -679,8 +723,41 @@ class EnergyTransfer:
                     if B_Q is None:
                         B_Q = self.getShellX(FT_B,QBins[q],QBins[q+1])
 
-                    if DeltaB_Q is None:
-                        DeltaB_Q = MPIVecLaplacian(self.comm, B_Q)
+                    if DeltaB_Q is None or Delta2B_Q is None:
+                        d2B_Q0dxx = MPIderiv2(self.comm,B_Q[0],0,deriv=2)
+                        d2B_Q0dyy = MPIderiv2(self.comm,B_Q[0],1,deriv=2)
+                        d2B_Q0dzz = MPIderiv2(self.comm,B_Q[0],2,deriv=2)
+                        d2B_Q1dxx = MPIderiv2(self.comm,B_Q[1],0,deriv=2)
+                        d2B_Q1dyy = MPIderiv2(self.comm,B_Q[1],1,deriv=2)
+                        d2B_Q1dzz = MPIderiv2(self.comm,B_Q[1],2,deriv=2)
+                        d2B_Q2dxx = MPIderiv2(self.comm,B_Q[2],0,deriv=2)
+                        d2B_Q2dyy = MPIderiv2(self.comm,B_Q[2],1,deriv=2)
+                        d2B_Q2dzz = MPIderiv2(self.comm,B_Q[2],2,deriv=2)
+
+                        DeltaB_Q = np.array(
+                            [d2B_Q0dxx + d2B_Q0dyy + d2B_Q0dzz,
+                             d2B_Q1dxx + d2B_Q1dyy + d2B_Q1dzz,
+                             d2B_Q2dxx + d2B_Q2dyy + d2B_Q2dzz])
+
+                        d4B_Q0dxxxx = MPIderiv2(self.comm,d2B_Q0dxx,0,deriv=2)
+                        d4B_Q0dyyyy = MPIderiv2(self.comm,d2B_Q0dyy,1,deriv=2)
+                        d4B_Q0dzzzz = MPIderiv2(self.comm,d2B_Q0dzz,2,deriv=2)
+                        d4B_Q1dxxxx = MPIderiv2(self.comm,d2B_Q1dxx,0,deriv=2)
+                        d4B_Q1dyyyy = MPIderiv2(self.comm,d2B_Q1dyy,1,deriv=2)
+                        d4B_Q1dzzzz = MPIderiv2(self.comm,d2B_Q1dzz,2,deriv=2)
+                        d4B_Q2dxxxx = MPIderiv2(self.comm,d2B_Q2dxx,0,deriv=2)
+                        d4B_Q2dyyyy = MPIderiv2(self.comm,d2B_Q2dyy,1,deriv=2)
+                        d4B_Q2dzzzz = MPIderiv2(self.comm,d2B_Q2dzz,2,deriv=2)
+
+                        Delta2B_Q =np.array(
+                            [d4B_Q0dxxxx + d4B_Q0dyyyy + d4B_Q0dzzzz,
+                             d4B_Q1dxxxx + d4B_Q1dyyyy + d4B_Q1dzzzz,
+                             d4B_Q2dxxxx + d4B_Q2dyyyy + d4B_Q2dzzzz])
+
+                        del d2B_Q0dxx,d2B_Q0dyy,d2B_Q0dzz,d2B_Q1dxx,d2B_Q1dyy,d2B_Q1dzz
+                        del d2B_Q2dxx,d2B_Q2dyy,d2B_Q2dzz,d4B_Q0dxxxx,d4B_Q0dyyyy
+                        del d4B_Q0dzzzz,d4B_Q1dxxxx,d4B_Q1dyyyy,d4B_Q1dzzzz
+                        del d4B_Q2dxxxx,d4B_Q2dyyyy,d4B_Q2dzzzz
 
                     if B_K is None:
                         B_K = self.getShellX(FT_B,KBins[k],KBins[k+1])
@@ -693,6 +770,15 @@ class EnergyTransfer:
                     if self.comm.Get_rank() == 0:
                         self.addResultToDict(Result,"WW","etaB","AnyToAny",KBin,QBin,totalSum)
                         print("done with etaB for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
+
+                    localSum = np.sum(B_K * Delta2B_Q)
+
+                    totalSum = None
+                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+
+                    if self.comm.Get_rank() == 0:
+                        self.addResultToDict(Result,"WW","eta2B","AnyToAny",KBin,QBin,totalSum)
+                        print("done with eta2B for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
 
                 # clear K terms
                 W_K = None
@@ -725,7 +811,9 @@ class EnergyTransfer:
             OneOverSqrtRhoGradP_Q = None
             SqrtRhoAcc_Q = None
             SqrtRhoDeltaU_Q = None
+            SqrtRhoDelta2U_Q = None
             DeltaB_Q = None
+            Delta2B_Q = None
             GradDivU_Q = None
             
             Str = ""
