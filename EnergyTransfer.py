@@ -819,5 +819,5 @@ class EnergyTransfer:
             Str = ""
             for Term in Terms:
                 Str += "-" + Term            
-            if self.comm.Get_rank() != 0 and False:
+            if self.comm.Get_rank() == 0 and True:
                 pickle.dump(Result,open("tmp%s.pkl" % Str,"wb")) 

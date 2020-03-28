@@ -281,6 +281,13 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(B[1],"B_y")
         self.get_and_write_statistics_to_file(B[2],"B_z")
 
+        self.vector_power_spectrum('z_p',U + B/np.sqrt(rho))
+        self.vector_power_spectrum('z_m',U - B/np.sqrt(rho))
+        self.vector_power_spectrum('z_p_dens',np.sqrt(rho)*U + B)
+        self.vector_power_spectrum('z_m_dens',np.sqrt(rho)*U - B)
+
+        self.get_and_write_statistics_to_file(np.sum(B*U,axis=0),"cross_helicity")
+
         # this is cheap... and only works for pencil decomp in z axis
         # np.sum is required for slabs with width > 1
         if rho.shape[-1] != self.res:
