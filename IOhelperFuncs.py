@@ -1,4 +1,4 @@
-import yt
+#import yt
 import numpy as np
 from mpi4py import MPI
 from mpi4py_fft import newDistArray
@@ -228,13 +228,26 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
             data = comm.scatter(None)
 
     elif order == 'C':
+        if h5py.h5.get_config().mpi:
+            h5py_kwargs = {
+                'driver' : 'mpio',
+                'comm' : comm,
+                }
+            if rank == 0:
+                print("Using HDF5 with MPIIO backend.")
+        else:
+            h5py_kwargs = {}
+            if rank == 0:
+                print("Using HDF5 with serial backend.")
+
 # TODO(pgrete): fix this to work with AthenaC data again
         # stripping the yt field type
         FieldName = FieldName[1]
-        h5Data = h5py.File(loadPath, 'r')[FieldName]
-        data = np.float64(h5Data[gid_x_s:gid_x_s+pencil_shape[0],
-                                 gid_y_s:gid_y_s+pencil_shape[1],
-                                 :])
+        with h5py.File(loadPath,'r', **h5py_kwargs) as f:
+            h5Data = f[FieldName]
+            data = np.float64(h5Data[gid_x_s:gid_x_s+pencil_shape[0],
+                                     gid_y_s:gid_y_s+pencil_shape[1],
+                                     :])
 
     if rank == 0:
         print("[%03d] done reading %s" % (rank,FieldName))
@@ -259,8 +272,12 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
             'driver' : 'mpio',
             'comm' : comm,
             }
+        if rank == 0:
+            print("Using HDF5 with MPIIO backend.")
     else:
         h5py_kwargs = {}
+        if rank == 0:
+            print("Using HDF5 with serial backend.")
 
     with h5py.File(loadPath,'r', **h5py_kwargs) as f:
         mb_size = f.attrs['MeshBlockSize']

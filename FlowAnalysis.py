@@ -51,14 +51,14 @@ class FlowAnalysis:
 
         # maximum integer wavenumber
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))
-#        self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)
+        self.k_bins = np.linspace(0.5,k_max_int + 0.5,k_max_int+1)
 #        # if max k does not fall in last bin, remove last bin
-#        if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
-#            self.k_bins = self.k_bins[:-1]
+        if self.res*0.5*np.sqrt(3.) < self.k_bins[-2]:
+            self.k_bins = self.k_bins[:-1]
 
-        resolution_exp = np.log(self.res/8)/np.log(2) * 4 + 1
-        self.k_bins = np.concatenate(
-            (np.array([0.]), 4.* 2** ((np.arange(0,resolution_exp + 1) - 1.) /4.)))
+#        resolution_exp = np.log(self.res/8)/np.log(2) * 4 + 1
+#        self.k_bins = np.concatenate(
+#            (np.array([0.]), 4.* 2** ((np.arange(0,resolution_exp + 1) - 1.) /4.)))
 
         self.FFT = FFTHelperFuncs.FFT
         self.localK = FFTHelperFuncs.local_wavenumbermesh
