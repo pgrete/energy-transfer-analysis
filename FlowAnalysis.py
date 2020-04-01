@@ -244,6 +244,7 @@ class FlowAnalysis:
                     print("on kernel: ", kernel)
                 self.calculate_filtering_spectrum(kernel)
         
+        # we're done with the hydro analysis. If there are no mag fields, quit here.
         if not self.has_b_fields:
             if self.rank == 0:
                 self.outfile.close()
@@ -277,6 +278,44 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(AlfMach,"AlfvenicMach")
 
         self.vector_power_spectrum('B',B)
+
+        # get the integral length scale of B (TODO: technically there's a rho in here)
+        mag_en_spec = self.outfile['B/PowSpec/Full']
+        L_B = np.trapz(mag_en_spec[1]/mag_en_spec[0],x=mag_en_spec[0])/np.trapz(mag_en_spec[1],x=mag_en_spec[0])
+        if self.rank == 0:
+            print("Integral lengthscale of B is %.3f" % L_B)
+
+        # calculate the large scale B field
+        B_large = newDistArray(self.FFT,False,rank=1)
+        FT_B = newDistArray(self.FFT,rank=1)
+        for j in range(3):
+            FT_B[j] = self.FFT.forward(B[j],FT_B[j])
+        FT_G = self.Kernel(L_B*self.res, "Gauss")
+        for j in range(3):
+            B_large[j] = (self.FFT.backward(FT_G * FT_B[j], B_large[j])).real
+
+        del FT_G, FT_B
+
+        self.vector_power_spectrum('B_large',B_large)
+
+        # now get the components along and perp to B_large (TODO: substract mean. not important for spec here)
+        B_large /= np.linalg.norm(B_large,axis=0) # this is now a unit vector
+        B_par = B * B_large
+        B_perp = B - B_par
+
+        self.vector_power_spectrum('B_par',B_par)
+        self.vector_power_spectrum('B_perp',B_perp)
+        del B_par, B_perp
+
+        U_par = U * B_large
+        U_perp = U - U_par
+
+        self.vector_power_spectrum('U_par',U_par)
+        self.vector_power_spectrum('U_perp',U_perp)
+        self.vector_power_spectrum('rhoU_par',np.sqrt(rho)*U_par)
+        self.vector_power_spectrum('rhoU_perp',np.sqrt(rho)*U_perp)
+        del U_par, U_perp
+
         self.get_and_write_statistics_to_file(B[0],"B_x")
         self.get_and_write_statistics_to_file(B[1],"B_y")
         self.get_and_write_statistics_to_file(B[2],"B_z")
