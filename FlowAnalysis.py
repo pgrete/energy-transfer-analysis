@@ -167,6 +167,8 @@ class FlowAnalysis:
 
         self.get_and_write_statistics_to_file(0.5 * rho * V2,"KinEnDensity")
         self.get_and_write_statistics_to_file(0.5 * V2,"KinEnSpecific")
+        if self.rank == 0:
+            print("Done with vel terms.",flush=True)
 
         if Acc is not None:
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
@@ -197,10 +199,16 @@ class FlowAnalysis:
             self.get_and_write_statistics_to_file(
                 np.sum(Acc*UDil,axis=0)/(
                     np.linalg.norm(Acc,axis=0)*np.linalg.norm(UDil,axis=0)),"Angle_uDil_a")
+            if self.rank == 0:
+                print("Done with Acc terms.",flush=True)
+            del Amag, UHarm, USol, UDil
 
         DivU = MPIdivX(self.comm,U)
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
         self.get_and_write_statistics_to_file(np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0)),"AbsRotU")
+
+        self.co_spectrum('PD',P,DivU)
+        del DivU
 
         if self.eos == 'adiabatic':
             self.gamma = self.gamma
@@ -217,24 +225,35 @@ class FlowAnalysis:
             K = T/rho**(2./3.)
             self.get_2d_hist('T-K',T,K)
             self.get_2d_hist('rho-K',rho,K)
+            del K, T
         elif self.eos == 'isothermal':
             if self.rank == 0:
                 print("Using c_s = %.3f for isothermal EOS" % self.cs)
             c_s2 = self.cs**2.
         else:
             raise SystemExit('Unknown EOS', self.eos)
+        
+        if self.rank == 0:
+            print("Done with EOS terms.",flush=True)
 
         Ms2 = V2 / (c_s2)
         self.get_and_write_statistics_to_file(np.sqrt(Ms2),"Ms")
+        del Ms2
+
         self.get_2d_hist('rho-P',rho,P)
         self.get_and_write_statistics_to_file(P,"P")
         self.get_and_write_statistics_to_file(np.log10(P),"log10P")
+        if self.rank == 0:
+            print("Done with P terms.",flush=True)
 
-        self.co_spectrum('PD',P,DivU)
 
         # should include factor of 1/(gamma(gamma-1))
         self.scalar_power_spectrum('eint',np.sqrt(rho*c_s2))
         self.get_and_write_statistics_to_file(rho*c_s2,"IntEnDensity")
+        del c_s2
+        
+        if self.rank == 0:
+            print("Done with eint terms.",flush=True)
 
         if self.kernels is not None:
             if self.rank == 0:
@@ -244,6 +263,8 @@ class FlowAnalysis:
                     print("on kernel: ", kernel)
                 self.calculate_filtering_spectrum(kernel)
         
+        if self.rank == 0:
+            print("Done with hydro terms.",flush=True)
         # we're done with the hydro analysis. If there are no mag fields, quit here.
         if not self.has_b_fields:
             if self.rank == 0:
@@ -266,55 +287,62 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(TotPres,"TotPres")
         self.get_and_write_statistics_to_file(plasmaBeta,"plasmabeta")
         self.get_and_write_statistics_to_file(np.log10(plasmaBeta),"log10plasmabeta")
+        del plasmaBeta
 
         if self.rank == 0:
             self.outfile.require_dataset('P-Bcomp/corr', (1,), dtype='f')[0] = corrPBcomp
             self.outfile.require_dataset('P-B/corr', (1,), dtype='f')[0] = corrPB
             self.outfile.require_dataset('P-B2/corr', (1,), dtype='f')[0] = corrPB2
 
-        AlfMach2 = V2*rho/B2
-        AlfMach = np.sqrt(AlfMach2)
+        AlfMach = np.sqrt(V2*rho/B2)
+        del V2
 
         self.get_and_write_statistics_to_file(AlfMach,"AlfvenicMach")
 
         self.vector_power_spectrum('B',B)
-
-        # get the integral length scale of B (TODO: technically there's a rho in here)
-        mag_en_spec = self.outfile['B/PowSpec/Full']
-        L_B = np.trapz(mag_en_spec[1]/mag_en_spec[0],x=mag_en_spec[0])/np.trapz(mag_en_spec[1],x=mag_en_spec[0])
+        
         if self.rank == 0:
-            print("Integral lengthscale of B is %.3f" % L_B)
+            print("Done with B terms.",flush=True)
 
-        # calculate the large scale B field
-        B_large = newDistArray(self.FFT,False,rank=1)
-        FT_B = newDistArray(self.FFT,rank=1)
-        for j in range(3):
-            FT_B[j] = self.FFT.forward(B[j],FT_B[j])
-        FT_G = self.Kernel(L_B*self.res, "Gauss")
-        for j in range(3):
-            B_large[j] = (self.FFT.backward(FT_G * FT_B[j], B_large[j])).real
-
-        del FT_G, FT_B
-
-        self.vector_power_spectrum('B_large',B_large)
-
-        # now get the components along and perp to B_large (TODO: substract mean. not important for spec here)
-        B_large /= np.linalg.norm(B_large,axis=0) # this is now a unit vector
-        B_par = B * B_large
-        B_perp = B - B_par
-
-        self.vector_power_spectrum('B_par',B_par)
-        self.vector_power_spectrum('B_perp',B_perp)
-        del B_par, B_perp
-
-        U_par = U * B_large
-        U_perp = U - U_par
-
-        self.vector_power_spectrum('U_par',U_par)
-        self.vector_power_spectrum('U_perp',U_perp)
-        self.vector_power_spectrum('rhoU_par',np.sqrt(rho)*U_par)
-        self.vector_power_spectrum('rhoU_perp',np.sqrt(rho)*U_perp)
-        del U_par, U_perp
+#        # get the integral length scale of B (TODO: technically there's a rho in here)
+#        mag_en_spec = self.outfile['B/PowSpec/Full']
+#        L_B = np.trapz(mag_en_spec[1]/mag_en_spec[0],x=mag_en_spec[0])/np.trapz(mag_en_spec[1],x=mag_en_spec[0])
+#        if self.rank == 0:
+#            print("Integral lengthscale of B is %.3f" % L_B)
+#
+#        # calculate the large scale B field
+#        B_large = newDistArray(self.FFT,False,rank=1)
+#        FT_B = newDistArray(self.FFT,rank=1)
+#        for j in range(3):
+#            FT_B[j] = self.FFT.forward(B[j],FT_B[j])
+#        FT_G = self.Kernel(L_B*self.res, "Gauss")
+#        for j in range(3):
+#            B_large[j] = (self.FFT.backward(FT_G * FT_B[j], B_large[j])).real
+#
+#        del FT_G, FT_B
+#
+#        self.vector_power_spectrum('B_large',B_large)
+#
+#        # now get the components along and perp to B_large (TODO: substract mean. not important for spec here)
+#        B_large /= np.linalg.norm(B_large,axis=0) # this is now a unit vector
+#        B_par = B * B_large
+#        B_perp = B - B_par
+#
+#        self.vector_power_spectrum('B_par',B_par)
+#        self.vector_power_spectrum('B_perp',B_perp)
+#        del B_par, B_perp
+#
+#        U_par = U * B_large
+#        U_perp = U - U_par
+#
+#        self.vector_power_spectrum('U_par',U_par)
+#        self.vector_power_spectrum('U_perp',U_perp)
+#        self.vector_power_spectrum('rhoU_par',np.sqrt(rho)*U_par)
+#        self.vector_power_spectrum('rhoU_perp',np.sqrt(rho)*U_perp)
+#        del U_par, U_perp
+#        
+#        if self.rank == 0:
+#            print("Done with B_large terms.",flush=True)
 
         self.get_and_write_statistics_to_file(B[0],"B_x")
         self.get_and_write_statistics_to_file(B[1],"B_y")
@@ -326,6 +354,9 @@ class FlowAnalysis:
         self.vector_power_spectrum('z_m_dens',np.sqrt(rho)*U - B)
 
         self.get_and_write_statistics_to_file(np.sum(B*U,axis=0),"cross_helicity")
+        
+        if self.rank == 0:
+            print("Done with cross-hel terms.",flush=True)
 
         # this is cheap... and only works for pencil decomp in z axis
         # np.sum is required for slabs with width > 1
@@ -364,6 +395,10 @@ class FlowAnalysis:
         self.get_and_write_statistics_to_file(np.log(DM),"lnDM_z")
         self.get_and_write_statistics_to_file(RM,"RM_z")
         self.get_and_write_statistics_to_file(RM/DM,"LOSB_z")
+        
+        del DM, RM
+        if self.rank == 0:
+            print("Done with DM and RM terms.",flush=True)
 
         corrRhoB = self.get_corr_coeff(rho,np.sqrt(B2))
         if self.rank == 0:
@@ -390,6 +425,9 @@ class FlowAnalysis:
 
         self.get_2d_hist('rho-B',rho,np.sqrt(B2))
         self.get_2d_hist('log10rho-B',np.log10(rho),np.sqrt(B2))
+        
+        if self.rank == 0:
+            print("Done with mag terms.",flush=True)
 
         if self.rank == 0:
             self.outfile.close()

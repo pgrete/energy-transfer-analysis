@@ -1,5 +1,10 @@
 import argparse
+import mpi4py
+mpi4py.rc(initialize=False)
 from mpi4py import MPI
+import h5py
+MPI.Init()
+
 import FFTHelperFuncs
 from IOhelperFuncs import read_fields 
 from EnergyTransfer import EnergyTransfer
@@ -212,7 +217,7 @@ fields = read_fields(args)
 # Run energy transfer analysis
 if args['type'] == 'transfer':
     
-    ET = EnergyTransfer(MPI,resolution,fields,gamma)
+    ET = EnergyTransfer(MPI,resolution,fields,gamma,outfile)
 
     if rank == 0:
         if os.path.isfile(outfile):
@@ -247,3 +252,5 @@ elif args['type'] == 'unit-test':
 
 else:
     raise SystemExit('Unknown transfer type: ', args['type'])
+
+MPI.Finalize()

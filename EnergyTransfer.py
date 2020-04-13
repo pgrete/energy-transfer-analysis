@@ -9,12 +9,13 @@ import sys
 class EnergyTransfer:
 
     
-    def __init__(self, MPI, RES, fields, gamma):
+    def __init__(self, MPI, RES, fields, gamma,outfile):
         
         self.gamma = gamma
         self.MPI = MPI
         self.comm = MPI.COMM_WORLD
         self.RES = RES
+        self.outfile = outfile
 
         self.rho = fields['rho']
         self.U = fields['U']
@@ -341,20 +342,19 @@ class EnergyTransfer:
                     if W_Q is None:
                         W_Q = self.getShellX(FT_W,QBins[q],QBins[q+1])                                          
                         
-                    if BdotGradW_QoverSqrtRho is None:
-                        BdotGradW_QoverSqrtRho = MPIXdotGradY(self.comm,B,W_Q/np.sqrt(rho))    
-     
-                    # B_K * (B dot grad) W_Q/sqrt(rho) - Moss et al
-                    localSum = np.sum(B_K * BdotGradW_QoverSqrtRho)
+                    #if BdotGradW_QoverSqrtRho is None:
+                    #    BdotGradW_QoverSqrtRho = MPIXdotGradY(self.comm,B,W_Q/np.sqrt(rho))    
 
-                    totalSum = None
-                    totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
-                    
-                    if self.comm.Get_rank() == 0:
-                        self.addResultToDict(Result,"WW","UBTa","AnyToAny",KBin,QBin,totalSum)
-                        print("done with UBTa for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
-                        
-                        
+                    ## B_K * (B dot grad) W_Q/sqrt(rho) - Moss et al
+                    #localSum = np.sum(B_K * BdotGradW_QoverSqrtRho)
+
+                    #totalSum = None
+                    #totalSum = self.comm.reduce(sendobj=localSum, op=self.MPI.SUM, root=0)
+
+                    #if self.comm.Get_rank() == 0:
+                    #    self.addResultToDict(Result,"WW","UBTa","AnyToAny",KBin,QBin,totalSum)
+                    #    print("done with UBTa for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))
+
                     if b is None:
                         b = B/np.sqrt(rho)
                         
@@ -816,8 +816,5 @@ class EnergyTransfer:
             Delta2B_Q = None
             GradDivU_Q = None
             
-            Str = ""
-            for Term in Terms:
-                Str += "-" + Term            
             if self.comm.Get_rank() == 0 and True:
-                pickle.dump(Result,open("tmp%s.pkl" % Str,"wb")) 
+                pickle.dump(Result,open(self.outfile + ".tmp","wb")) 
