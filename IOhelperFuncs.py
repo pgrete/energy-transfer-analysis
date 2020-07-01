@@ -5,6 +5,7 @@ from mpi4py_fft import newDistArray
 import FFTHelperFuncs
 import sys
 import h5py
+import time
 
 comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -207,12 +208,17 @@ def readAllFieldsWithYT(fields,loadPath,Res,
         fields['Acc'] = Acc
 
 
-def readOneFieldWithHDF(loadPath,FieldName,Res,order):
+def readOneFieldWithHDF(loadPath,FieldName,Res,order,f=None):
     pencil_shape = FFTHelperFuncs.local_shape
     n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
     gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
     gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
+    #print("[%04d] my data is" % rank, gid_x_s, gid_y_s, flush=True)
+
+    if rank == 0:
+        print("pencil_shape",pencil_shape)
+        print("n_proc",n_proc)
     if order == 'F':
         Filename = loadPath + '/' + FieldName + '-' + str(Res) + '.hdf5'
 
@@ -228,26 +234,34 @@ def readOneFieldWithHDF(loadPath,FieldName,Res,order):
             data = comm.scatter(None)
 
     elif order == 'C':
-        if h5py.h5.get_config().mpi:
-            h5py_kwargs = {
-                'driver' : 'mpio',
-                'comm' : comm,
-                }
-            if rank == 0:
-                print("Using HDF5 with MPIIO backend.")
-        else:
-            h5py_kwargs = {}
-            if rank == 0:
-                print("Using HDF5 with serial backend.")
 
 # TODO(pgrete): fix this to work with AthenaC data again
         # stripping the yt field type
         FieldName = FieldName[1]
-        with h5py.File(loadPath,'r', **h5py_kwargs) as f:
-            h5Data = f[FieldName]
-            data = np.float64(h5Data[gid_x_s:gid_x_s+pencil_shape[0],
-                                     gid_y_s:gid_y_s+pencil_shape[1],
-                                     :])
+        #time.sleep(np.random.uniform(0,5))
+
+        # load full slab for continguos data
+        if gid_y_s == 0:
+            slab_data = np.float32(np.copy(f[FieldName][gid_x_s:gid_x_s+pencil_shape[0],
+                                     :,
+                                     :]))
+            for i in range(1,n_proc[1]):
+                target_rank = rank+i
+                target_gid_y_s = target_rank % n_proc[1] * pencil_shape[1]
+                data_to_send = np.array(slab_data[:,target_gid_y_s:target_gid_y_s+pencil_shape[1],:],dtype=np.float32)
+                #print("[%04d] sending data to %03d" % (rank ,target_rank),flush=True)
+                comm.send(data_to_send, dest=target_rank, tag=13)
+            data = slab_data[:,gid_y_s:gid_y_s+pencil_shape[1],:]
+        else:
+            #data = numpy.empty(pencil_shape, dtype=numpy.float32)
+            #print("[%04d] waiting for data from %03d" % (rank, rank // n_proc[1]),flush=True)
+            data = comm.recv(source=rank - rank % n_proc[1], tag=13)
+
+        data = np.float64(data)
+
+        #data = np.float64(f[FieldName][gid_x_s:gid_x_s+pencil_shape[0],
+        #                             gid_y_s:gid_y_s+pencil_shape[1],
+        #                             :])
 
     if rank == 0:
         print("[%03d] done reading %s" % (rank,FieldName))
@@ -280,8 +294,19 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
             print("Using HDF5 with serial backend.")
 
     with h5py.File(loadPath,'r', **h5py_kwargs) as f:
-        mb_size = f.attrs['MeshBlockSize']
-        rg_size = f.attrs['RootGridSize']
+
+        if rank == 0:
+            mb_size = f.attrs['MeshBlockSize']
+            rg_size = f.attrs['RootGridSize']
+            log_loc_all = np.copy(f['LogicalLocations'])
+        else:
+            mb_size = None
+            rg_size = None
+            log_loc_all = None
+ 
+        mb_size = comm.bcast(mb_size, root=0)
+        rg_size = comm.bcast(rg_size, root=0)
+        log_loc_all = comm.bcast(log_loc_all, root=0)
 
         if 'rho' == FieldName:
             field_idx = 0
@@ -321,7 +346,7 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
         gid_y_s = rank % n_proc[1] * tmp.shape[1] # global y start index
         gid_y_e = rank % n_proc[1] * tmp.shape[1] + tmp.shape[1] # global y end index
 
-        log_loc_all = np.copy(f['LogicalLocations']) # all logical meshblock locations
+#        log_loc_all = np.copy(f['LogicalLocations']) # all logical meshblock locations
 
         for i, loc in enumerate(log_loc_all):
             gid_mb = loc * mb_size # index of meshblock
@@ -380,6 +405,26 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
     if order is not "C" and order is not "F":
         print("For safety reasons you have to specify the order (row or column major) for your data.")
         sys.exit(1)
+        
+    if h5py.h5.get_config().mpi and False:
+        h5py_kwargs = {
+            'driver' : 'mpio',
+            'comm' : comm,
+            }
+        if rank == 0:
+            print("Using HDF5 with MPIIO backend.")
+    else:
+        h5py_kwargs = {}
+        if rank == 0:
+            print("Using HDF5 with serial backend.")
+    
+    
+    pencil_shape = FFTHelperFuncs.local_shape
+    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+    if 0 == rank % n_proc[1] * pencil_shape[1]: # global y start index
+        f = h5py.File(loadPath,'r', **h5py_kwargs)
+    else:
+        f = None
 
     if use_athena_hdf:
         readOneFieldWithX = readOneFieldWithAthenaPPHDF
@@ -387,28 +432,31 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
         readOneFieldWithX = readOneFieldWithHDF
 
     if rhoField is not None:
-        fields['rho'] = readOneFieldWithX(loadPath,rhoField,Res,order)
+        fields['rho'] = readOneFieldWithX(loadPath,rhoField,Res,order,f)
 
     if velFields is not None:
         U = np.zeros((3,) + FinalShape,dtype=np.float64)
-        U[0] = readOneFieldWithX(loadPath,velFields[0],Res,order)
-        U[1] = readOneFieldWithX(loadPath,velFields[1],Res,order)
-        U[2] = readOneFieldWithX(loadPath,velFields[2],Res,order)
+        U[0] = readOneFieldWithX(loadPath,velFields[0],Res,order,f)
+        U[1] = readOneFieldWithX(loadPath,velFields[1],Res,order,f)
+        U[2] = readOneFieldWithX(loadPath,velFields[2],Res,order,f)
         fields['U'] = U
 
     if magFields is not None:
         B = np.zeros((3,) + FinalShape,dtype=np.float64)  
-        B[0] = readOneFieldWithX(loadPath,magFields[0],Res,order)
-        B[1] = readOneFieldWithX(loadPath,magFields[1],Res,order)
-        B[2] = readOneFieldWithX(loadPath,magFields[2],Res,order)
+        B[0] = readOneFieldWithX(loadPath,magFields[0],Res,order,f)
+        B[1] = readOneFieldWithX(loadPath,magFields[1],Res,order,f)
+        B[2] = readOneFieldWithX(loadPath,magFields[2],Res,order,f)
         fields['B'] = B
 
     if accFields is not None:
         Acc = np.zeros((3,) + FinalShape,dtype=np.float64)  
-        Acc[0] = readOneFieldWithX(loadPath,accFields[0],Res,order)
-        Acc[1] = readOneFieldWithX(loadPath,accFields[1],Res,order)
-        Acc[2] = readOneFieldWithX(loadPath,accFields[2],Res,order)
+        Acc[0] = readOneFieldWithX(loadPath,accFields[0],Res,order,f)
+        Acc[1] = readOneFieldWithX(loadPath,accFields[1],Res,order,f)
+        Acc[2] = readOneFieldWithX(loadPath,accFields[2],Res,order,f)
         fields['Acc'] = Acc
 
     if pField is not None:
-        fields['P'] = readOneFieldWithX(loadPath,pField,Res,order)
+        fields['P'] = readOneFieldWithX(loadPath,pField,Res,order,f)
+
+    if f is not None:
+        f.close()
