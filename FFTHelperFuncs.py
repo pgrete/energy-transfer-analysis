@@ -16,12 +16,15 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS "AS IS" AND A
 import numpy as np
 import sys
 from mpi4py import MPI
-from mpi4py_fft import PFFT, newDistArray
+#from mpi4py_fft import PFFT, newDistArray
+from fluidfft.fft3d.mpi_with_p3dfft import FFT3DMPIWithP3DFFT as PFFT
+
 comm  = MPI.COMM_WORLD
 
 FFT = None
 local_wavenumbermesh = None
 local_shape = None
+global_shape = None
 
 def setup_fft(res, dtype=np.complex128):
     """ Setup shared FFT object and properties
@@ -31,6 +34,7 @@ def setup_fft(res, dtype=np.complex128):
     global FFT
     global local_wavenumbermesh
     global local_shape
+    global global_shape
 
     if comm.Get_rank() == 0:
         print("""!!! WARNING - CURRENT PITFALLS !!!
@@ -41,13 +45,31 @@ def setup_fft(res, dtype=np.complex128):
 
     time_start = MPI.Wtime()
 
-    N = np.array([res, res, res], dtype=int)
+    #N = np.array([res, res, res], dtype=int)
+    global_shape = np.array([res, res, res], dtype=int)
     # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
     L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
-    FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=dtype)
+    #FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=dtype)
+    FFT = PFFT(res, res, res)
 
-    local_wavenumbermesh = get_local_wavenumbermesh(FFT, L)
-    local_shape = newDistArray(FFT,False).shape
+    #local_wavenumbermesh = get_local_wavenumbermesh(FFT, L)
+    localK = FFT.get_k_adim_loc()
+    localKdims = FFT.get_shapeK_loc()
+
+    #k-x
+    ifreq = np.fromfunction(lambda i,j,k : localK[0][i], 
+        (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
+    #k-y
+    jfreq = np.fromfunction(lambda i,j,k : localK[1][j], 
+        (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
+    #k-z
+    kfreq = np.fromfunction(lambda i,j,k : localK[2][k], 
+        (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
+    
+    local_wavenumbermesh = np.array([ifreq,jfreq,kfreq])
+
+    #local_shape = newDistArray(FFT,False).shape
+    local_shape = FFT.get_shapeX_loc()
 
     time_elapsed = MPI.Wtime() - time_start
     time_elapsed = comm.gather(time_elapsed)

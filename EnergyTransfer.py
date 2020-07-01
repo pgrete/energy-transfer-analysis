@@ -1,6 +1,6 @@
 import numpy as np
 import FFTHelperFuncs
-from mpi4py_fft import newDistArray
+#from mpi4py_fft import newDistArray
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIVecLaplacian
 import time
 import pickle
@@ -35,6 +35,7 @@ class EnergyTransfer:
         self.FT_U = None
 
         self.FFT = FFTHelperFuncs.FFT
+        
         self.localKmag = np.linalg.norm(FFTHelperFuncs.local_wavenumbermesh,axis=0)
 
 
@@ -42,14 +43,19 @@ class EnergyTransfer:
         """ extracts shell X-0.5 < K <X+0.5 of FTquant """
 
         if FTquant.shape[0] == 3:    
-            Quant_X = newDistArray(self.FFT,False,rank=1)
+            Quant_X = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)
             for i in range(3):
                 tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant[i],0.)
-                Quant_X[i] = self.FFT.backward(tmp,Quant_X[i])
+                #print("got here")
+                #Quant_X[i] =
+                #tmp = self.FFT.fft(self.W[i])
+                #print("done FFT",self.FT_W[i].shape, self.FT_W[i].dtype, tmp.shape, tmp.dtype)
+                Quant_X[i] = self.FFT.ifft(tmp)
+                #print("but not here")
         else:
-            Quant_X = newDistArray(self.FFT,False)
+            #Quant_X = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
             tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant,0.)
-            Quant_X = self.FFT.backward(tmp,Quant_X)        
+            Quant_X = self.FFT.ifft(tmp)        
 
         return Quant_X
     
@@ -106,7 +112,7 @@ class EnergyTransfer:
         B = self.B
 
         if self.W is None:
-            self.W = newDistArray(self.FFT,False,rank=1)                                
+            self.W = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)             
             for i in range(3):
                 self.W[i] = np.sqrt(rho) * U[i]
 
@@ -114,32 +120,32 @@ class EnergyTransfer:
             self.S = np.sqrt(self.gamma*P)
 
         if self.FT_W is None:
-            self.FT_W = newDistArray(self.FFT,rank=1)
+            self.FT_W = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_W[i] = self.FFT.forward(self.W[i], self.FT_W[i])            
+                self.FT_W[i] = self.FFT.fft(self.W[i])            
             
         if self.FT_U is None:
-            self.FT_U = newDistArray(self.FFT,rank=1)
+            self.FT_U = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_U[i] = self.FFT.forward(self.U[i], self.FT_U[i])
+                self.FT_U[i] = self.FFT.fft(self.U[i])
 
         if self.FT_B is None and self.B is not None:
-            self.FT_B = newDistArray(self.FFT,rank=1)
+            self.FT_B = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_B[i] = self.FFT.forward(self.B[i], self.FT_B[i])    
+                self.FT_B[i] = self.FFT.fft(self.B[i])    
         
         if self.FT_P is None and self.P is not None:
-            self.FT_P = newDistArray(self.FFT)
-            self.FT_P = self.FFT.forward(self.P, self.FT_P)    
+            self.FT_P = np.zeros(self.localKmag.shape,dtype=np.complex128)
+            self.FT_P = self.FFT.fft(self.P)    
         
         if self.FT_S is None and self.S is not None:
-            self.FT_S = newDistArray(self.FFT)
-            self.FT_S = self.FFT.forward(self.S, self.FT_S)    
+            self.FT_S = np.zeros(self.localKmag.shape,dtype=np.complex128)
+            self.FT_S = self.FFT.fft(self.S)    
         
         if self.FT_Acc is None and self.Acc is not None:
-            self.FT_Acc = newDistArray(self.FFT,rank=1)
+            self.FT_Acc = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_Acc[i] = self.FFT.forward(self.Acc[i], self.FT_Acc[i])    
+                self.FT_Acc[i] = self.FFT.fft(self.Acc[i])    
             
     
     def getTransferWWAnyToAny(self, Result, KBins, QBins, Terms):
@@ -154,7 +160,6 @@ class EnergyTransfer:
             Terms -- list of terms that should be analyzed, could be
                 "UUA": Kinetic to kinetic by advection        
         """
-        
         #self.populateResultDict(Result,KBins,"WW",Terms,"AnyToAny")
         self.calcBasicVars("WW")
         

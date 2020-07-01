@@ -20,7 +20,7 @@ def MPIderiv2(comm,var,dim,deriv=1):
     sl_m1 = slice(None,-2,None)
     sl_p1 = slice(2,None,None)
     sl_c = slice(1,-1,None)
-    N = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int)
+    N = np.array(FFTHelperFuncs.global_shape, dtype=int)
     loc_slc = FFTHelperFuncs.local_shape
     n_proc = N // loc_slc
                

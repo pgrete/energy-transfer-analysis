@@ -1,4 +1,4 @@
-#import yt
+import yt
 import numpy as np
 from mpi4py import MPI
 from mpi4py_fft import newDistArray
@@ -157,7 +157,7 @@ def readAllFieldsWithYT(fields,loadPath,Res,
 
     """
     pencil_shape = FFTHelperFuncs.local_shape
-    if (np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) % pencil_shape != 0).any():
+    if (np.array(FFTHelperFuncs.global_shape, dtype=int) % pencil_shape != 0).any():
         raise SystemExit(
             'Data cannot be split evenly among processes. ' +
             'Abort (for now) - fix me!')
@@ -166,7 +166,7 @@ def readAllFieldsWithYT(fields,loadPath,Res,
     left_edge = ds.domain_left_edge
     right_edge = ds.domain_right_edge
 
-    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+    n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // pencil_shape
     gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
     gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
@@ -210,7 +210,7 @@ def readAllFieldsWithYT(fields,loadPath,Res,
 
 def readOneFieldWithHDF(loadPath,FieldName,Res,order,f=None):
     pencil_shape = FFTHelperFuncs.local_shape
-    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+    n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // pencil_shape
     gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
     gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
@@ -279,7 +279,7 @@ def readOneFieldWithAthenaPPHDF(loadPath,FieldName,Res,order):
     tmp = np.zeros(FFTHelperFuncs.local_shape, dtype=np.float64)
     loc_slc = tmp.shape
 
-    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // loc_slc
+    n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // loc_slc
 
     if h5py.h5.get_config().mpi:
         h5py_kwargs = {
@@ -420,7 +420,7 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
     
     
     pencil_shape = FFTHelperFuncs.local_shape
-    n_proc = np.array(FFTHelperFuncs.FFT.global_shape(), dtype=int) // pencil_shape
+    n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // pencil_shape
     if 0 == rank % n_proc[1] * pencil_shape[1]: # global y start index
         f = h5py.File(loadPath,'r', **h5py_kwargs)
     else:
