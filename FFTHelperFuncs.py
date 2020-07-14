@@ -18,6 +18,8 @@ import sys
 from mpi4py import MPI
 #from mpi4py_fft import PFFT, newDistArray
 from fluidfft.fft3d.mpi_with_p3dfft import FFT3DMPIWithP3DFFT as PFFT
+#from fluidfft.fft3d.mpi_with_mpi4pyfft import FFT3DMPIWithMPI4PYFFT as PFFT
+#from fluidfft.fft3d.mpi_with_fftw1d import FFT3DMPIWithFFTW1D as PFFT
 
 comm  = MPI.COMM_WORLD
 
@@ -66,7 +68,7 @@ def setup_fft(res, dtype=np.complex128):
     kfreq = np.fromfunction(lambda i,j,k : localK[2][k], 
         (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
     
-    local_wavenumbermesh = np.array([ifreq,jfreq,kfreq])
+    local_wavenumbermesh = np.array([ifreq,jfreq,kfreq],dtype=np.float64)
 
     #local_shape = newDistArray(FFT,False).shape
     local_shape = FFT.get_shapeX_loc()

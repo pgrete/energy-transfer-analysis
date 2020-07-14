@@ -1,6 +1,5 @@
 import numpy as np
 import FFTHelperFuncs
-#from mpi4py_fft import newDistArray
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIVecLaplacian
 import time
 import pickle

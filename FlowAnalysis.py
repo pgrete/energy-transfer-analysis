@@ -1,6 +1,5 @@
 import numpy as np
 import FFTHelperFuncs
-from mpi4py_fft import newDistArray
 import time
 import pickle
 import sys
@@ -63,6 +62,7 @@ class FlowAnalysis:
         self.FFT = FFTHelperFuncs.FFT
         self.localK = FFTHelperFuncs.local_wavenumbermesh
         self.localKmag = np.linalg.norm(self.localK,axis=0)
+        print("[%d] max k: %f" % (self.rank, self.localKmag.max()) )
 
         self.localKunit = np.copy(self.localK)
         # fixing division by 0 for harmonic part
@@ -97,24 +97,24 @@ class FlowAnalysis:
         
         for i, k in enumerate(k_lm):
             # set up for calculating cumulative spectrum (epsilon) for each filter length scale
-            energy = newDistArray(self.FFT,False,rank=1)
-            FT_momentum = newDistArray(self.FFT,rank=1)
-            momentum_filtered = newDistArray(self.FFT,False,rank=1)
-            FT_rho = newDistArray(self.FFT,rank=0)
-            rho_filtered = newDistArray(self.FFT,False,rank=0)
+            energy = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)
+            FT_momentum = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
+            momentum_filtered = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)
+            FT_rho = np.zeros(self.localKmag.shape,dtype=np.complex128)
+            rho_filtered = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
 
             # calculate the cumulative spectrum (epsilon) for each filter length scale
             # (see equations 27 and 6 of Sadek and Aluie)
-            FT_rho = self.FFT.forward(self.rho, FT_rho)
+            FT_rho = self.FFT.fft(self.rho)
             for j in range(3):
-                FT_momentum[j] = self.FFT.forward(momentum[j], FT_momentum[j])
+                FT_momentum[j] = self.FFT.fft(momentum[j])
 
             filter_width = self.res/(2*k)
             FT_G = self.Kernel(filter_width, kernel)  # calculate convolution kernel
             # calculate filtered values of momentum and density
-            rho_filtered = (self.FFT.backward(FT_G * FT_rho, rho_filtered)).real
+            rho_filtered = (self.FFT.ifft(FT_G * FT_rho)).real
             for j in range(3):
-                momentum_filtered[j] = (self.FFT.backward(FT_G * FT_momentum[j], momentum_filtered[j])).real
+                momentum_filtered[j] = (self.FFT.ifft(FT_G * FT_momentum[j])).real
 
             # compute the average of momentum^2 / density
             filtered_kin_energy = 0.5 * np.sum(np.abs(momentum_filtered**2) / np.abs(rho_filtered), axis=0)
@@ -311,13 +311,13 @@ class FlowAnalysis:
 #            print("Integral lengthscale of B is %.3f" % L_B)
 #
 #        # calculate the large scale B field
-#        B_large = newDistArray(self.FFT,False,rank=1)
-#        FT_B = newDistArray(self.FFT,rank=1)
+#        B_large = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)
+#        FT_B = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
 #        for j in range(3):
-#            FT_B[j] = self.FFT.forward(B[j],FT_B[j])
+#            FT_B[j] = self.FFT.fft(B[j])
 #        FT_G = self.Kernel(L_B*self.res, "Gauss")
 #        for j in range(3):
-#            B_large[j] = (self.FFT.backward(FT_G * FT_B[j], B_large[j])).real
+#            B_large[j] = (self.FFT.ifft(FT_G * FT_B[j])).real
 #
 #        del FT_G, FT_B
 #
@@ -363,42 +363,45 @@ class FlowAnalysis:
         if rho.shape[-1] != self.res:
             raise SystemExit('Calculation of dispersion measures only works for pencils')
 
-        # using subcomms here so that the pencil based slices are not getting mixed
-        DM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(rho,axis=0))/float(self.res)
-        RM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
-        # using chunks so that each process only contributes it's own chunk of data
-        # as all processes have the full information after the allreduce
-        chunkSize = DM.shape[0] // FFTHelperFuncs.FFT.subcomm[0].Get_size()
-        startIdx = FFTHelperFuncs.FFT.subcomm[0].Get_rank() * chunkSize
-        endIdx = (FFTHelperFuncs.FFT.subcomm[0].Get_rank() + 1) * chunkSize
-        self.get_and_write_statistics_to_file(DM[startIdx:endIdx,:],"DM_x")
-        self.get_and_write_statistics_to_file(np.log(DM[startIdx:endIdx,:]),"lnDM_x")
-        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:],"RM_x")
-        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:]/DM[startIdx:endIdx,:],"LOSB_x")
-
-        # using subcomms here so that the pencil based slices are not getting mixed
-        DM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(rho,axis=1))/float(self.res)
-        RM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(B[1]*rho,axis=1))/float(self.res)
-        # using chunks so that each process only contributes it's own chunk of data
-        # as all processes have the full information after the allreduce
-        chunkSize = DM.shape[1] // FFTHelperFuncs.FFT.subcomm[1].Get_size()
-        startIdx = FFTHelperFuncs.FFT.subcomm[1].Get_rank() * chunkSize
-        endIdx = (FFTHelperFuncs.FFT.subcomm[1].Get_rank() + 1) * chunkSize
-        self.get_and_write_statistics_to_file(DM[:,startIdx:endIdx],"DM_y")
-        self.get_and_write_statistics_to_file(np.log(DM[:,startIdx:endIdx]),"lnDM_y")
-        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx],"RM_y")
-        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx]/DM[:,startIdx:endIdx],"LOSB_y")
-
-        DM = np.mean(rho,axis=2)
-        RM = np.mean(B[2]*rho,axis=2)
-        self.get_and_write_statistics_to_file(DM,"DM_z")
-        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_z")
-        self.get_and_write_statistics_to_file(RM,"RM_z")
-        self.get_and_write_statistics_to_file(RM/DM,"LOSB_z")
-        
-        del DM, RM
-        if self.rank == 0:
-            print("Done with DM and RM terms.",flush=True)
+################################
+##########3 Needs fixing for fluidfft
+###########################3
+#        # using subcomms here so that the pencil based slices are not getting mixed
+#        DM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(rho,axis=0))/float(self.res)
+#        RM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
+#        # using chunks so that each process only contributes it's own chunk of data
+#        # as all processes have the full information after the allreduce
+#        chunkSize = DM.shape[0] // FFTHelperFuncs.FFT.subcomm[0].Get_size()
+#        startIdx = FFTHelperFuncs.FFT.subcomm[0].Get_rank() * chunkSize
+#        endIdx = (FFTHelperFuncs.FFT.subcomm[0].Get_rank() + 1) * chunkSize
+#        self.get_and_write_statistics_to_file(DM[startIdx:endIdx,:],"DM_x")
+#        self.get_and_write_statistics_to_file(np.log(DM[startIdx:endIdx,:]),"lnDM_x")
+#        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:],"RM_x")
+#        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:]/DM[startIdx:endIdx,:],"LOSB_x")
+#
+#        # using subcomms here so that the pencil based slices are not getting mixed
+#        DM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(rho,axis=1))/float(self.res)
+#        RM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(B[1]*rho,axis=1))/float(self.res)
+#        # using chunks so that each process only contributes it's own chunk of data
+#        # as all processes have the full information after the allreduce
+#        chunkSize = DM.shape[1] // FFTHelperFuncs.FFT.subcomm[1].Get_size()
+#        startIdx = FFTHelperFuncs.FFT.subcomm[1].Get_rank() * chunkSize
+#        endIdx = (FFTHelperFuncs.FFT.subcomm[1].Get_rank() + 1) * chunkSize
+#        self.get_and_write_statistics_to_file(DM[:,startIdx:endIdx],"DM_y")
+#        self.get_and_write_statistics_to_file(np.log(DM[:,startIdx:endIdx]),"lnDM_y")
+#        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx],"RM_y")
+#        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx]/DM[:,startIdx:endIdx],"LOSB_y")
+#
+#        DM = np.mean(rho,axis=2)
+#        RM = np.mean(B[2]*rho,axis=2)
+#        self.get_and_write_statistics_to_file(DM,"DM_z")
+#        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_z")
+#        self.get_and_write_statistics_to_file(RM,"RM_z")
+#        self.get_and_write_statistics_to_file(RM/DM,"LOSB_z")
+#        
+#        del DM, RM
+#        if self.rank == 0:
+#            print("Done with DM and RM terms.",flush=True)
 
         corrRhoB = self.get_corr_coeff(rho,np.sqrt(B2))
         if self.rank == 0:
@@ -492,7 +495,7 @@ class FlowAnalysis:
                 print("totalHistCount is 0. Check desired binning!")
                 print(self.k_bins)
                 print(totalHistCount)
-                sys.exit(1)
+                #sys.exit(1)
 
             # calculate corresponding k to to bin
             # this help to overcome statistics for low k bins
@@ -520,8 +523,8 @@ class FlowAnalysis:
         # set up left side in Fourier space
         div_vec = MPIdivX(self.comm, vec)
 
-        ft_div_vec = newDistArray(self.FFT, rank=0)
-        ft_div_vec = self.FFT.forward(div_vec, ft_div_vec)
+        ft_div_vec = np.zeros(self.localKmag.shape,dtype=np.complex128)
+        ft_div_vec = self.FFT.fft(div_vec)
 
         # discrete fourier representation of -div grad based on consecutive
         # 2nd order first derivatives
@@ -534,8 +537,8 @@ class FlowAnalysis:
         denom[denom == 0.] = 1.
 
         ft_div_vec /= denom
-        phi = newDistArray(self.FFT, False, rank=0)
-        phi = self.FFT.backward(ft_div_vec, phi).real
+        phi = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
+        phi = self.FFT.ifft(ft_div_vec).real
 
         return - MPIgradX(self.comm, phi)
 
@@ -556,8 +559,8 @@ class FlowAnalysis:
 
     def scalar_power_spectrum(self,name,field):
 
-        FT_field = newDistArray(self.FFT)
-        FT_field = self.FFT.forward(field, FT_field)
+        FT_field = np.zeros(self.localKmag.shape,dtype=np.complex128)
+        FT_field = self.FFT.fft(field)
 
         FT_fieldAbs2 = np.abs(FT_field)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_fieldAbs2.reshape(-1))
@@ -569,11 +572,11 @@ class FlowAnalysis:
 # e.g. (38) in https://arxiv.org/pdf/1101.0150.pdf
     def co_spectrum(self,name,fieldA,fieldB):
 
-        FT_fieldA = newDistArray(self.FFT)
-        FT_fieldA = self.FFT.forward(fieldA, FT_fieldA)
+        FT_fieldA = np.zeros(self.localKmag.shape,dtype=np.complex128)
+        FT_fieldA = self.FFT.fft(fieldA)
 
-        FT_fieldB = newDistArray(self.FFT)
-        FT_fieldB = self.FFT.forward(fieldB, FT_fieldB)
+        FT_fieldB = np.zeros(self.localKmag.shape,dtype=np.complex128)
+        FT_fieldB = self.FFT.fft(fieldB)
 
         FT_CoSpec = FT_fieldA * np.conj(FT_fieldB)
         PS_Abs = self.normalized_spectrum(self.localKmag.reshape(-1),np.abs(FT_CoSpec).reshape(-1))
@@ -585,9 +588,9 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/CoSpec/Real', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Real
 
     def vector_power_spectrum(self, name, vec):
-        FT_vec = newDistArray(self.FFT,rank=1)
+        FT_vec = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
         for i in range(3):
-            FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])
+            FT_vec[i] = self.FFT.fft(vec[i])
 
         FT_vecAbs2 = np.linalg.norm(FT_vec,axis=0)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_vecAbs2.reshape(-1))
