@@ -1,5 +1,7 @@
 # Regression testing
 
+## Manual testing
+
 Gold standard is `0024-All-Forc-Pres-testing-128_HDF-gold.pkl`
 
 It is based on a snapshot of a driven turbulence simulation
@@ -25,3 +27,10 @@ To run test simply
 mpirun -np 8 python ../run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile test.pkl --eos adiabatic --gamma 1.0001  -forced -b
 python runTest.py 0024-All-Forc-Pres-testing-128_HDF-gold.pkl test.pkl
 ```
+
+## Automated testing
+
+The tests above are run automatically for each commit through the [GitLab mirror](https://gitlab.com/pgrete/energy-transfer-analysis).
+
+The CI configuration is set in [.gitlab-ci.yml](../.gitlab-ci.yml) and the corresponding
+Docker image is created from the [Dockerfile](Dockerfile).

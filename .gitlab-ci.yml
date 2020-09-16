@@ -1,0 +1,17 @@
+image: ubuntu20.04-entrans 
+
+stages:
+  - default
+#  - coverage
+#  - style
+
+# run test on CPUs
+default-cpu:
+  tags:
+    - cpu
+  stage: default
+  script:
+    - mpirun -np 1 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path /data/enzo/DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile oneproc-enzo-yt.pkl --eos adiabatic --gamma 1.0001  -forced -b
+    - python testing/runTest.py testing/0024-All-Forc-Pres-testing-128_HDF-gold.pkl oneproc-enzo-yt.pkl
+    - mpirun -np 4 python ./run_analysis.py --terms All FU PU BUPbb UBPbb --res 128 --data_path /data/enzo/DD0024/data0024 --data_type Enzo --binning test --type transfer --outfile multiproc-enzo-yt.pkl --eos adiabatic --gamma 1.0001  -forced -b
+    - python testing/runTest.py testing/0024-All-Forc-Pres-testing-128_HDF-gold.pkl multiproc-enzo-yt.pkl
