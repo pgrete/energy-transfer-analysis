@@ -1,9 +1,13 @@
 import numpy as np
 import FFTHelperFuncs
+import heffte
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradYScalar, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIVecLaplacian
 import time
 import pickle
 import sys
+from mpi4py import MPI
+comm  = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 class EnergyTransfer:
 
@@ -49,12 +53,12 @@ class EnergyTransfer:
                 #Quant_X[i] =
                 #tmp = self.FFT.fft(self.W[i])
                 #print("done FFT",self.FT_W[i].shape, self.FT_W[i].dtype, tmp.shape, tmp.dtype)
-                Quant_X[i] = self.FFT.ifft(tmp)
+                self.FFT.backward(tmp, Quant_X[i], heffte.scale.full)
                 #print("but not here")
         else:
-            #Quant_X = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
+            Quant_X = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
             tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant,0.)
-            Quant_X = self.FFT.ifft(tmp)        
+            self.FFT.backward(tmp, Quant_X, heffte.scale.full)        
 
         return Quant_X
     
@@ -109,6 +113,7 @@ class EnergyTransfer:
         P = self.P
         U = self.U
         B = self.B
+        print(rank, "start cars")
 
         if self.W is None:
             self.W = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)             
@@ -121,30 +126,31 @@ class EnergyTransfer:
         if self.FT_W is None:
             self.FT_W = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_W[i] = self.FFT.fft(self.W[i])            
+                self.FFT.forward(self.W[i], self.FT_W[i])            
             
         if self.FT_U is None:
             self.FT_U = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_U[i] = self.FFT.fft(self.U[i])
+                self.FFT.forward(self.U[i], self.FT_U[i])
 
         if self.FT_B is None and self.B is not None:
             self.FT_B = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_B[i] = self.FFT.fft(self.B[i])    
+                self.FFT.forward(self.B[i], self.FT_B[i])
         
         if self.FT_P is None and self.P is not None:
             self.FT_P = np.zeros(self.localKmag.shape,dtype=np.complex128)
-            self.FT_P = self.FFT.fft(self.P)    
+            self.FFT.forward(self.P, self.FT_P)
         
         if self.FT_S is None and self.S is not None:
             self.FT_S = np.zeros(self.localKmag.shape,dtype=np.complex128)
-            self.FT_S = self.FFT.fft(self.S)    
+            self.FFT.forward(self.S, self.FT_S)
         
         if self.FT_Acc is None and self.Acc is not None:
             self.FT_Acc = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_Acc[i] = self.FFT.fft(self.Acc[i])    
+                self.FFT.forward(self.Acc[i], self.FT_Acc[i])
+        print(rank, "done")
             
     
     def getTransferWWAnyToAny(self, Result, KBins, QBins, Terms):
@@ -253,8 +259,6 @@ class EnergyTransfer:
                         self.addResultToDict(Result,"WW","UUC","AnyToAny",KBin,QBin,totalSumB)
                         self.addResultToDict(Result,"WW","UU","AnyToAny",KBin,QBin,totalSumA+totalSumB)
                         print("done with UU for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))   
-                
-                #  - S_K * (U dot grad) S_Q - 0.5 S_K S_Q DivU
                 if "SS" in Terms:
                     if S_K is None:
                         S_K = self.getShellX(FT_S,KBins[k],KBins[k+1])
@@ -284,6 +288,8 @@ class EnergyTransfer:
                         self.addResultToDict(Result,"WW","SSC","AnyToAny",KBin,QBin,totalSumB)
                         self.addResultToDict(Result,"WW","SS","AnyToAny",KBin,QBin,totalSumA+totalSumB)
                         print("done with SS for K = %s Q = %s after %.1f sec [total]" % (KBin,QBin,time.time() - startTime ))   
+                
+                #  - S_K * (U dot grad) S_Q - 0.5 S_K S_Q DivU
                 
                 if "BB" in Terms:
                     if B_K is None:
@@ -822,3 +828,4 @@ class EnergyTransfer:
             
             if self.comm.Get_rank() == 0 and True:
                 pickle.dump(Result,open(self.outfile + ".tmp","wb")) 
+                sys.stdout.flush()
