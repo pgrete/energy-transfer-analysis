@@ -156,56 +156,43 @@ def readAllFieldsWithYT(fields,loadPath,Res,
     Reads all fields using the yt frontend. Data is read in parallel.
 
     """
-    pencil_shape = FFTHelperFuncs.local_shape
-    if (np.array(FFTHelperFuncs.global_shape, dtype=int) % pencil_shape != 0).any():
-        raise SystemExit(
-            'Data cannot be split evenly among processes. ' +
-            'Abort (for now) - fix me!')
 
     ds = yt.load(loadPath)
     left_edge = ds.domain_left_edge
     right_edge = ds.domain_right_edge
-
-    n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // pencil_shape
-    gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
-    gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
-
+    pencil_shape = FFTHelperFuncs.local_shape
+    assert pencil_shape[2] == Res, "YT load only supports slab and pencil decomp"
     start_pos = left_edge
-    start_pos[0] += gid_x_s / Res * (right_edge[0] - left_edge[0])
-    start_pos[1] += gid_y_s / Res * (right_edge[1] - left_edge[1])
-    if rank == 0:
-        print("Loading "+ loadPath)
-        print("Chunk dimensions = ", pencil_shape)
-
-
-    ad = ds.h.covering_grid(level=0, left_edge=start_pos,dims=FFTHelperFuncs.local_shape)
+    start_pos[0] += FFTHelperFuncs.box_real_local.low[0] / Res * (right_edge[0] - left_edge[0])
+    start_pos[1] += FFTHelperFuncs.box_real_local.low[1] / Res * (right_edge[1] - left_edge[1])
+    ad = ds.h.covering_grid(level=0, left_edge=start_pos, dims=FFTHelperFuncs.local_shape)
 
     if rhoField is not None:
-        fields['rho'] = ad[rhoField].d
+        fields['rho'] = np.ascontiguousarray(ad[rhoField].d)
 
     if pressField is not None:
-        fields['P'] = ad[pressField].d
+        fields['P'] = np.ascontiguousarray(ad[pressField].d)
 
     if velFields is not None:
         U = np.zeros((3,) + pencil_shape,dtype=np.float64)
         U[0] = ad[velFields[0]].d
         U[1] = ad[velFields[1]].d
         U[2] = ad[velFields[2]].d
-        fields['U'] = U
+        fields['U'] = np.ascontiguousarray(U)
 
     if magFields is not None:
         B = np.zeros((3,) + pencil_shape,dtype=np.float64)
         B[0] = ad[magFields[0]].d
         B[1] = ad[magFields[1]].d
         B[2] = ad[magFields[2]].d
-        fields['B'] = B
+        fields['B'] = np.ascontiguousarray(B)
 
     if accFields is not None:
         Acc = np.zeros((3,) + pencil_shape,dtype=np.float64)
         Acc[0] = ad[accFields[0]].d
         Acc[1] = ad[accFields[1]].d
         Acc[2] = ad[accFields[2]].d
-        fields['Acc'] = Acc
+        fields['Acc'] = np.ascontiguousarray(Acc)
 
 
 def readOneFieldWithHDF(loadPath,FieldName,Res,order,f=None):

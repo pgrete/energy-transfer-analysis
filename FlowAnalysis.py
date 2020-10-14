@@ -1,5 +1,6 @@
 import numpy as np
 import FFTHelperFuncs
+import heffte
 import time
 import pickle
 import sys
@@ -105,16 +106,16 @@ class FlowAnalysis:
 
             # calculate the cumulative spectrum (epsilon) for each filter length scale
             # (see equations 27 and 6 of Sadek and Aluie)
-            FT_rho = self.FFT.fft(self.rho)
+            self.FFT.forward(self.rho, FT_rho, heffte.scale.full)
             for j in range(3):
-                FT_momentum[j] = self.FFT.fft(momentum[j])
+                self.FFT.forward(momentum[j], FT_momentum[j], heffte.scale.full)
 
             filter_width = self.res/(2*k)
             FT_G = self.Kernel(filter_width, kernel)  # calculate convolution kernel
             # calculate filtered values of momentum and density
-            rho_filtered = (self.FFT.ifft(FT_G * FT_rho)).real
+            self.FFT.backward(FT_G * FT_rho, rho_filtered)
             for j in range(3):
-                momentum_filtered[j] = (self.FFT.ifft(FT_G * FT_momentum[j])).real
+                self.FFT.backward(FT_G * FT_momentum[j],momentum_filtered[j])
 
             # compute the average of momentum^2 / density
             filtered_kin_energy = 0.5 * np.sum(np.abs(momentum_filtered**2) / np.abs(rho_filtered), axis=0)
@@ -524,7 +525,7 @@ class FlowAnalysis:
         div_vec = MPIdivX(self.comm, vec)
 
         ft_div_vec = np.zeros(self.localKmag.shape,dtype=np.complex128)
-        ft_div_vec = self.FFT.fft(div_vec)
+        self.FFT.forward(div_vec, ft_div_vec, heffte.scale.full)
 
         # discrete fourier representation of -div grad based on consecutive
         # 2nd order first derivatives
@@ -538,7 +539,7 @@ class FlowAnalysis:
 
         ft_div_vec /= denom
         phi = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
-        phi = self.FFT.ifft(ft_div_vec).real
+        self.FFT.backward(ft_div_vec, phi)
 
         return - MPIgradX(self.comm, phi)
 
@@ -560,7 +561,7 @@ class FlowAnalysis:
     def scalar_power_spectrum(self,name,field):
 
         FT_field = np.zeros(self.localKmag.shape,dtype=np.complex128)
-        FT_field = self.FFT.fft(field)
+        self.FFT.forward(field, FT_field, heffte.scale.full)
 
         FT_fieldAbs2 = np.abs(FT_field)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_fieldAbs2.reshape(-1))
@@ -573,10 +574,10 @@ class FlowAnalysis:
     def co_spectrum(self,name,fieldA,fieldB):
 
         FT_fieldA = np.zeros(self.localKmag.shape,dtype=np.complex128)
-        FT_fieldA = self.FFT.fft(fieldA)
+        self.FFT.forward(fieldA, FT_fieldA, heffte.scale.full)
 
         FT_fieldB = np.zeros(self.localKmag.shape,dtype=np.complex128)
-        FT_fieldB = self.FFT.fft(fieldB)
+        self.FFT.forward(fieldB, FT_fieldB, heffte.scale.full)
 
         FT_CoSpec = FT_fieldA * np.conj(FT_fieldB)
         PS_Abs = self.normalized_spectrum(self.localKmag.reshape(-1),np.abs(FT_CoSpec).reshape(-1))
@@ -590,7 +591,7 @@ class FlowAnalysis:
     def vector_power_spectrum(self, name, vec):
         FT_vec = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
         for i in range(3):
-            FT_vec[i] = self.FFT.fft(vec[i])
+            self.FFT.forward(vec[i], FT_vec[i], heffte.scale.full)
 
         FT_vecAbs2 = np.linalg.norm(FT_vec,axis=0)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_vecAbs2.reshape(-1))

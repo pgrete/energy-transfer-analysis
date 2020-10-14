@@ -29,6 +29,8 @@ FFT = None
 local_wavenumbermesh = None
 local_shape = None
 global_shape = None
+box_spec_local = None
+box_real_local = None
 
 def setup_fft(res, dtype=np.complex128):
     """ Setup shared FFT object and properties
@@ -39,6 +41,8 @@ def setup_fft(res, dtype=np.complex128):
     global local_wavenumbermesh
     global local_shape
     global global_shape
+    global box_spec_local
+    global box_real_local
 
     if comm.Get_rank() == 0:
         print("""!!! WARNING - CURRENT PITFALLS !!!
@@ -50,7 +54,8 @@ def setup_fft(res, dtype=np.complex128):
     time_start = MPI.Wtime()
 
     #N = np.array([res, res, res], dtype=int)
-    global_shape = np.array([res, res, res], dtype=int)
+    N = tuple(np.array([res, res, res], dtype=int))
+    global_shape = N
 
     r2c = False
     N = res
@@ -76,7 +81,8 @@ def setup_fft(res, dtype=np.complex128):
     # get local indices
     real_box = heffte.split_world(real_box, best_grid)[rank]
     complex_box = heffte.split_world(complex_box, best_grid)[rank]
-    print(rank, real_box.low, real_box.high, real_box.size, complex_box.low, complex_box.high, complex_box.size)
+    real_box.order = np.array([2, 1, 0], np.int32)
+    complex_box.order = np.array([2, 1, 0], np.int32)
 
     if r2c:
         FFT = heffte.fft3d_r2c(heffte.backend.fftw,
@@ -85,42 +91,11 @@ def setup_fft(res, dtype=np.complex128):
         FFT = heffte.fft3d(heffte.backend.fftw,
                        real_box, complex_box, comm)
 
-    #local_wavenumbermesh = get_local_wavenumbermesh(real_box.size, complex_box.size, global_shape, r2c)
-#    #local_wavenumbermesh = get_local_wavenumbermesh(FFT, L)
-    #localK = FFT.get_k_adim_loc()
-    local_k_x = np.arange(complex_box.low[0], complex_box.high[0] + 1)
-    local_k_y = np.arange(complex_box.low[1], complex_box.high[1] + 1)
-    local_k_z = np.arange(complex_box.low[2], complex_box.high[2] + 1)
-    local_k_x[local_k_x >= res//2] -= res
-    local_k_y[local_k_y >= res//2] -= res
-    local_k_z[local_k_z >= res//2] -= res
-    localK = [local_k_x, local_k_y, local_k_z]
-    #localKdims = FFT.get_shapeK_loc()
-    localKdims = complex_box.size
-
-    #k-x
-    ifreq = np.fromfunction(lambda i,j,k : localK[0][i], 
-        (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
-#    #k-y
-    jfreq = np.fromfunction(lambda i,j,k : localK[1][j], 
-        (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
-    #k-z
-    kfreq = np.fromfunction(lambda i,j,k : localK[2][k], 
-        (localKdims[0],localKdims[1],localKdims[2]), dtype=int)
-    
-    #freq= np.fft.fftfreq(res, 1./res)
-
-    ##k-x
-    #ifreq = np.fromfunction(lambda i,j,k : freq[i], (res,res,res), dtype=int)
-    ##k-y
-    #jfreq = np.fromfunction(lambda i,j,k : freq[j], (res,res,res), dtype=int)
-    ##k-z
-    #kfreq = np.fromfunction(lambda i,j,k : freq[k], (res,res,res), dtype=int)
-
-    local_wavenumbermesh = np.array([ifreq,jfreq,kfreq],dtype=np.float64)
+    box_spec_local = complex_box
+    box_real_local = real_box
+    local_wavenumbermesh = get_local_wavenumbermesh(res, complex_box)
 
     local_shape = tuple(real_box.size)
-    #local_wavenumbermesh = get_local_wavenumbermesh(tuple(real_box.size), tuple(complex_box.size), global_shape, r2c)
 
     time_elapsed = MPI.Wtime() - time_start
     time_elapsed = comm.gather(time_elapsed)
@@ -130,24 +105,13 @@ def setup_fft(res, dtype=np.complex128):
             (np.mean(time_elapsed), np.std(time_elapsed)))
         sys.stdout.flush()
 
+def get_local_wavenumbermesh(N, box_spec_local):
+    freq = np.fft.fftfreq(N, 1./N)
+    #k-x
+    ifreq = np.fromfunction(lambda i,j,k : freq[i + box_spec_local.low[0]], box_spec_local.size, dtype=int)
+    #k-y
+    jfreq = np.fromfunction(lambda i,j,k : freq[j + box_spec_local.low[1]], box_spec_local.size, dtype=int)
+    #k-z
+    kfreq = np.fromfunction(lambda i,j,k : freq[k + box_spec_local.low[2]], box_spec_local.size, dtype=int)
 
-# from
-# https://bitbucket.org/mpi4py/mpi4py-fft/raw/67dfed980115108c76abb7e865860b5da98674f9/examples/spectral_dns_solver.py
-# with modification for complex numbers
-def get_local_wavenumbermesh(real_shape, complex_shape, global_shape, r2c = False):
-    """Returns local wavenumber mesh."""
-    s = real_shape
-    N = global_shape
-    # Set wavenumbers in grid
-    if not r2c:
-        k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N]
-    else:
-        k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N[:-1]]
-        k.append(np.fft.rfftfreq(N[-1], 1./N[-1]).astype(int))
-    K = [ki[si] for ki, si in zip(k, s)]
-    Ks = np.meshgrid(*K, indexing='ij', sparse=True)
-    #Lp = 2*np.pi/L
-    Lp = np.array([1,1,1])
-    for i in range(3):
-        Ks[i] = (Ks[i]*Lp[i]).astype(float)
-    return [np.broadcast_to(k, complex_shape) for k in Ks]
+    return np.ascontiguousarray([ifreq,jfreq,kfreq], np.float64)
