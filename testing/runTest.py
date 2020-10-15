@@ -39,11 +39,11 @@ for Term in Ref["WW"].keys():
         print("Checking...",Term)
         test_terms.remove(Term)
 
-    for KBin in Ref["WW"][Term]['AnyToAny'].keys():
-        for QBin in Ref["WW"][Term]['AnyToAny'][KBin].keys():
+    for KBin in sorted(Ref["WW"][Term]['AnyToAny'].keys()):
+        for QBin in sorted(Ref["WW"][Term]['AnyToAny'][KBin].keys()):
             np.testing.assert_allclose(Ref["WW"][Term]['AnyToAny'][KBin][QBin],
                                        Test["WW"][Term]['AnyToAny'][KBin][QBin],
-                                       rtol=1e-14,atol=1e-7
+                                       rtol=1e-14,atol=1e-7,err_msg="K: %s Q: %s" % (KBin, QBin)
                                       )            
 if len(test_terms) > 0:
     print("Got extra terms in test set:",test_terms)

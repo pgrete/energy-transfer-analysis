@@ -755,11 +755,78 @@ class FlowAnalysis:
                 tmp = self.outfile.require_dataset(name + '/hist/' + HistBins + 'MinMax/counts', (self.num_bins,self.num_bins), dtype='f')
                 tmp[:,:] = totalHist.astype(float)
 
+    def test_stats(self, test_name, field, ref_results): 
+
+        N = self.res * self.res * self.res
+        total = self.comm.allreduce(np.sum(field))
+        mean = total / N
+
+        totalSqrd = self.comm.allreduce(np.sum(field**2.))
+        rms = np.sqrt(totalSqrd / N)
+
+        var = self.comm.allreduce(np.sum((field - mean)**2.)) / (N - 1.)
+        #print("%.12g %.12g %.12g" % (mean, rms, var))
+        
+        msg = "[%d] %s: mean is %.12g but expected %.12g" % (self.rank, test_name, mean, ref_results["mean"])
+        assert np.isclose(mean, ref_results["mean"]), msg
+        
+        msg = "[%d] %s: rms is %.12g but expected %.12g" % (self.rank, test_name, rms, ref_results["rms"])
+        assert np.isclose(rms, ref_results["rms"]), msg
+        
+        msg = "[%d] %s: variance is %.12g but expected %.12g" % (self.rank, test_name, var, ref_results["var"])
+        assert np.isclose(var, ref_results["var"]), msg
+
     def run_test(self):
         """ simple tests (to be expanded and separated)
         """
         # using velocity field for no reason, but it's probably most likely to be avail
         vec = self.U
+
+        # test data reading
+        self.test_stats("raw data: ", vec[0],{
+                "mean" : -0.175809494654,
+                "rms" : 2.05533800353,
+                "var" : 4.19350732998
+                })
+
+        # gen ref values
+        if self.size == 1:
+            x = vec[0]
+            xdx = np.zeros_like(x)
+            xdx[1:-1,:,:] = (x[2:,:,:] - x[:-2,:,:])/(2.*1./self.res)
+            xdx[0,:,:] = (x[1,:,:] - x[-1,:,:])/(2.*1./self.res) 
+            xdx[-1,:,:] = (x[0,:,:] - x[-2,:,:])/(2.*1./self.res) 
+            self.test_stats("x deriv: ", xdx,{
+                    "mean" : 0.0,
+                    "rms" : 34.084713052,
+                    "var" : 1161.76821781,
+                    })
+        else:
+            xdx = MPIderiv2(self.comm,vec[0],0)
+            self.test_stats("x deriv: ", xdx,{
+                    "mean" : 0.0,
+                    "rms" : 34.084713052,
+                    "var" : 1161.76821781,
+                    })
+
+        if self.size == 1:
+            x = vec[0]
+            xdy = np.zeros_like(x)
+            xdy[:,1:-1,:] = (x[:,2:,:] - x[:,:-2,:])/(2.*1./self.res)
+            xdy[:,0,:] = (x[:,1,:] - x[:,-1,:])/(2.*1./self.res) 
+            xdy[:,-1,:] = (x[:,0,:] - x[:,-2,:])/(2.*1./self.res) 
+            self.test_stats("y deriv: ", xdy,{
+                    "mean" : 0.0,
+                    "rms" : 38.6433225627,
+                    "var" : 1493.30709075,
+                    })
+        else:
+            xdy = MPIderiv2(self.comm,vec[0],1)
+            self.test_stats("y deriv: ", xdy,{
+                    "mean" : 0.0,
+                    "rms" : 38.6433225627,
+                    "var" : 1493.30709075,
+                    })
 
         # TESTING VECTOR DECOMPOSITION
         vec_harm, vec_sol, vec_dil = self.decompose_vector(vec)
@@ -767,8 +834,9 @@ class FlowAnalysis:
                                    vec_harm.reshape((3,1,1,1)) + vec_sol + vec_dil,
                                    err_msg="Mismatch bw/ decomposed and original vector.")
 
-        msg = "solenoidal part is not divergence free"
-        assert np.sum(np.abs(MPIdivX(self.comm, vec_sol)))/vec_sol.size/3 < 1e-13, msg
+        err = np.sum(np.abs(MPIdivX(self.comm, vec_sol)))/vec_sol.size/3
+        msg = "[%d] solenoidal part is not divergence free, err: " % (self.rank) + str(err)
+        assert err < 1e-13, msg
         
         msg = "compressive part is not rotation free"
         assert np.sum(np.linalg.norm(MPIrotX(self.comm, vec_dil),axis=0))/vec_dil.size/3 < 1e-13, msg
