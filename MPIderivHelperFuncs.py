@@ -25,8 +25,8 @@ def MPIderiv2(comm,var,dim,deriv=1):
     n_proc = N // loc_slc
                
     if (dim == 0):
-        next_proc = (rank + n_proc[1]) % (n_proc[0] * n_proc[1])
-        prev_proc = (rank - n_proc[1]) % (n_proc[0] * n_proc[1])
+        next_proc = (rank + 1) % n_proc[0] + (rank // n_proc[0]) * n_proc[0]
+        prev_proc = (rank - 1) % n_proc[0] + (rank // n_proc[0]) * n_proc[0]
         # send right slice of local proc as left slab to follow proc
         #print("[%d] x-deriv right slice to %d and recv from %d" % (rank, next_proc, prev_proc))
         leftSlice = None
@@ -41,8 +41,8 @@ def MPIderiv2(comm,var,dim,deriv=1):
         c0 = tmp[sl_c,:,:]
         m1 = tmp[sl_m1,:,:]
     elif (dim == 1):
-        next_proc = (rank + 1) % n_proc[1] + (rank // n_proc[1]) * n_proc[1]
-        prev_proc = (rank - 1) % n_proc[1] + (rank // n_proc[1]) * n_proc[1]
+        next_proc = (rank + n_proc[0]) % (n_proc[0] * n_proc[1])
+        prev_proc = (rank - n_proc[0]) % (n_proc[0] * n_proc[1])
         # send right slice of local proc as left slab to follow proc
         leftSlice = None
         leftSlice = comm.sendrecv(sendobj=var[:,-1:,:],dest=next_proc,source=prev_proc)
