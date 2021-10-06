@@ -1,5 +1,6 @@
 import argparse
 from mpi4py import MPI
+from mpi4py_fft import newDistArray
 import FFTHelperFuncs
 from IOhelperFuncs import read_fields 
 from EnergyTransfer import EnergyTransfer
@@ -34,7 +35,7 @@ parser.add_argument('--type',
 parser.add_argument('--data_type',
                     required=True,
                     type=str,
-                    choices=['Enzo', 'AthenaPP', 'AthenaPPHDF', 'AthenaHDFC', 'Athena'],
+                    choices=['Enzo', 'AthenaPP', 'AthenaPPHDF', 'AthenaHDFC', 'Athena', 'Flash'],
                     help='set data cube type')
 
 parser.add_argument('--data_path',

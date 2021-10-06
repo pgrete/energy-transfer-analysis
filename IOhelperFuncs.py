@@ -104,6 +104,24 @@ def read_fields(args):
                             rhoField, velFields, magFields,
                             accFields, pressField)
 
+    elif args['data_type'] == 'Flash':
+        rhoField = 'dens'
+        velFields = ['velx', 'vely', 'velz']
+        if args['b']:
+            raise ValueError("Magnetic field loaded not implemented yet for Flash")
+            # magFields = ['cell_centered_B_x', 'cell_centered_B_y', 'cell_centered_B_z']
+        if args['forced']:
+            accFields = ['accx', 'accy', 'accz']
+
+        if args['eos'] == 'adiabatic':
+            pressField = 'pres'
+
+        order = 'F'
+
+        readAllFieldsWithYT(fields, args['data_path'], args['res'],
+                            rhoField, velFields, magFields,
+                            accFields, pressField)
+
     else:
         raise SystemExit('Unknown data type: ', data_type)
 
