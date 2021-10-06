@@ -20,11 +20,12 @@ In general the following parameters are available
   - `transfer` for energy transfer analysis
   - `flow` for analysis of turbulence statistics
   - `unit-test` for some preliminary unit tests
-- `--data_type {Enzo,AthenaPP,AthenaHDFC,Athena}` set data cube type
+- `--data_type {Enzo,AthenaPP,AthenaHDFC,Athena,Flash}` set data cube type
   - `Enzo` reads Enzo data using `yt` frontend
   - `AthenaPP` reads Athena++/K-Athena data using `yt` frontend
   - `AthenaHDFC` reads Athena data that has been converted to hdf5 data
   - `Athena` reads Athena data using `yt` frontend
+  - `Flash` read Flash data using `yt` frontend
   - to add more options see section "Adding new simulation output"
 - `--data_path DATA_PATH` set data location
 -  `--outfile OUTFILE`     set file to store results (should be `.pkl` for `transfer` and `.hdf5` for `flow`)
