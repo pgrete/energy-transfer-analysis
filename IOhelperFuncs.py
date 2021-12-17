@@ -1,4 +1,4 @@
-#import yt
+import yt
 import numpy as np
 from mpi4py import MPI
 from mpi4py_fft import newDistArray
