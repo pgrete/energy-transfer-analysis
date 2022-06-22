@@ -178,7 +178,7 @@ def readAllFieldsWithYT(fields,loadPath,Res,
         print("Chunk dimensions = ", pencil_shape)
 
 
-    ad = ds.h.covering_grid(level=0, left_edge=start_pos,dims=FFTHelperFuncs.local_shape)
+    ad = ds.covering_grid(level=0, left_edge=start_pos,dims=FFTHelperFuncs.local_shape)
 
     if rhoField is not None:
         fields['rho'] = ad[rhoField].d
@@ -397,7 +397,7 @@ def readAllFieldsWithHDF(fields,loadPath,Res,
 
     FinalShape = FFTHelperFuncs.local_shape
 
-    if order is not "C" and order is not "F":
+    if order != "C" and order != "F":
         print("For safety reasons you have to specify the order (row or column major) for your data.")
         sys.exit(1)
         

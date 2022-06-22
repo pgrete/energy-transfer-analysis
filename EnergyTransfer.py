@@ -45,16 +45,11 @@ class EnergyTransfer:
             Quant_X = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)
             for i in range(3):
                 tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant[i],0.)
-                #print("got here")
-                #Quant_X[i] =
-                #tmp = self.FFT.fft(self.W[i])
-                #print("done FFT",self.FT_W[i].shape, self.FT_W[i].dtype, tmp.shape, tmp.dtype)
-                Quant_X[i] = self.FFT.ifft(tmp)
-                #print("but not here")
+                Quant_X[i] = self.FFT.backward(tmp,Quant_X[i])
         else:
-            #Quant_X = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
+            Quant_X = np.zeros(FFTHelperFuncs.local_shape,dtype=np.float64)
             tmp = np.where(np.logical_and(self.localKmag > Low, self.localKmag <= Up),FTquant,0.)
-            Quant_X = self.FFT.ifft(tmp)        
+            Quant_X = self.FFT.backward(tmp,Quant_X)
 
         return Quant_X
     
@@ -121,30 +116,30 @@ class EnergyTransfer:
         if self.FT_W is None:
             self.FT_W = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_W[i] = self.FFT.fft(self.W[i])            
+                self.FT_W[i] = self.FFT.forward(self.W[i], self.FT_W[i])
             
         if self.FT_U is None:
             self.FT_U = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_U[i] = self.FFT.fft(self.U[i])
+                self.FT_U[i] = self.FFT.forward(self.U[i], self.FT_U[i])
 
         if self.FT_B is None and self.B is not None:
             self.FT_B = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_B[i] = self.FFT.fft(self.B[i])    
+                self.FT_B[i] = self.FFT.forward(self.B[i], self.FT_B[i])
         
         if self.FT_P is None and self.P is not None:
             self.FT_P = np.zeros(self.localKmag.shape,dtype=np.complex128)
-            self.FT_P = self.FFT.fft(self.P)    
+            self.FT_P = self.FFT.forward(self.P, self.FT_P)
         
         if self.FT_S is None and self.S is not None:
             self.FT_S = np.zeros(self.localKmag.shape,dtype=np.complex128)
-            self.FT_S = self.FFT.fft(self.S)    
+            self.FT_S = self.FFT.forward(self.S, self.FT_S)
         
         if self.FT_Acc is None and self.Acc is not None:
             self.FT_Acc = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
             for i in range(3):
-                self.FT_Acc[i] = self.FFT.fft(self.Acc[i])    
+                self.FT_Acc[i] = self.FFT.forward(self.Acc[i], self.FT_Acc[i])
             
     
     def getTransferWWAnyToAny(self, Result, KBins, QBins, Terms):
