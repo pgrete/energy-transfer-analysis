@@ -99,6 +99,27 @@ def read_fields(args):
                              rhoField, velFields, magFields,
                              accFields, pressField,order)
 
+    elif args['data_type'] == 'AthenaPK':
+        rhoField = ('parthenon', 'prim_density')
+        velFields = [('parthenon', 'prim_velocity_1'),
+                     ('parthenon', 'prim_velocity_2'),
+                     ('parthenon', 'prim_velocity_3'),]
+        if args['b']:
+            magFields = [('parthenon', 'prim_magnetic_field_1'),
+                         ('parthenon', 'prim_magnetic_field_2'),
+                         ('parthenon', 'prim_magnetic_field_3'),]
+        if args['forced']:
+            accFields = [('parthenon', 'acc_Acceleration1'),
+                         ('parthenon', 'acc_Acceleration2'),
+                         ('parthenon', 'acc_Acceleration3'),]
+
+        if args['eos'] == 'adiabatic':
+            pressField = ('parthenon', 'prim_pressure')
+
+        readAllFieldsWithYT(fields, args['data_path'], args['res'],
+                            rhoField, velFields, magFields,
+                            accFields, pressField)
+
     elif args['data_type'] == 'Athena':
         rhoField = 'density'
         velFields = ['velocity_x', 'velocity_y', 'velocity_z']
@@ -109,8 +130,6 @@ def read_fields(args):
 
         if args['eos'] == 'adiabatic':
             pressField = 'pressure'
-
-        order = 'C'
 
         readAllFieldsWithYT(fields, args['data_path'], args['res'],
                             rhoField, velFields, magFields,

@@ -40,7 +40,7 @@ parser.add_argument('--data_type',
                     required=True,
                     type=str,
                     choices=['Enzo', 'AthenaPP', 'AthenaPPHDF', 'AthenaPPHDFC',
-                             'AthenaHDFC', 'Athena', 'JHTDB'],
+                             'AthenaHDFC', 'Athena', 'JHTDB', 'AthenaPK'],
                     help='set data cube type')
 
 parser.add_argument('--data_path',
