@@ -100,21 +100,21 @@ def read_fields(args):
                              accFields, pressField,order)
 
     elif args['data_type'] == 'AthenaPK':
-        rhoField = ('parthenon', 'prim_density')
-        velFields = [('parthenon', 'prim_velocity_1'),
-                     ('parthenon', 'prim_velocity_2'),
-                     ('parthenon', 'prim_velocity_3'),]
+        rhoField = ('gas', 'density')
+        velFields = [('gas', 'velocity_x'),
+                     ('gas', 'velocity_y'),
+                     ('gas', 'velocity_z'),]
         if args['b']:
-            magFields = [('parthenon', 'prim_magnetic_field_1'),
-                         ('parthenon', 'prim_magnetic_field_2'),
-                         ('parthenon', 'prim_magnetic_field_3'),]
+            magFields = [('gas', 'magnetic_field_x'),
+                         ('gas', 'magnetic_field_y'),
+                         ('gas', 'magnetic_field_z'),]
         if args['forced']:
             accFields = [('parthenon', 'acc_Acceleration1'),
                          ('parthenon', 'acc_Acceleration2'),
                          ('parthenon', 'acc_Acceleration3'),]
 
         if args['eos'] == 'adiabatic':
-            pressField = ('parthenon', 'prim_pressure')
+            pressField = ('gas', 'pressure')
 
         readAllFieldsWithYT(fields, args['data_path'], args['res'],
                             rhoField, velFields, magFields,
