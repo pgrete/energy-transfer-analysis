@@ -189,7 +189,7 @@ def readAllFieldsWithYT(fields,loadPath,Res,
     gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
     gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
-    start_pos = left_edge
+    start_pos = left_edge.copy()
     start_pos[0] += gid_x_s / Res * (right_edge[0] - left_edge[0])
     start_pos[1] += gid_y_s / Res * (right_edge[1] - left_edge[1])
     if rank == 0:
