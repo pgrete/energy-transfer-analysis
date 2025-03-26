@@ -99,6 +99,27 @@ def read_fields(args):
                              rhoField, velFields, magFields,
                              accFields, pressField,order)
 
+    elif args['data_type'] == 'AthenaPKopenPMD':
+        rhoField = 'cons_cons_density_lvl0'
+        velFields = ['cons_cons_momentum_density_1_lvl0',
+                     'cons_cons_momentum_density_2_lvl0',
+                     'cons_cons_momentum_density_3_lvl0',]
+        if args['b']:
+            magFields = [('gas', 'magnetic_field_x'),
+                         ('gas', 'magnetic_field_y'),
+                         ('gas', 'magnetic_field_z'),]
+        if args['forced']:
+            accFields = ['acc_acc_0_lvl0',
+                         'acc_acc_1_lvl0',
+                         'acc_acc_2_lvl0',]
+
+        if args['eos'] == 'adiabatic':
+            pressField = 'cons_cons_total_energy_density_lvl0'
+
+        readAllFieldsWithOPMD(fields, args['data_path'], args['res'],
+                            rhoField, velFields, magFields,
+                            accFields, pressField, fields_are_cons=True,gamma=args['gamma'])
+
     elif args['data_type'] == 'AthenaPK':
         rhoField = ('gas', 'density')
         velFields = [('gas', 'velocity_x'),
@@ -109,9 +130,9 @@ def read_fields(args):
                          ('gas', 'magnetic_field_y'),
                          ('gas', 'magnetic_field_z'),]
         if args['forced']:
-            accFields = [('parthenon', 'acc_Acceleration1'),
-                         ('parthenon', 'acc_Acceleration2'),
-                         ('parthenon', 'acc_Acceleration3'),]
+            accFields = [('parthenon', 'acc_0'),
+                         ('parthenon', 'acc_1'),
+                         ('parthenon', 'acc_2'),]
 
         if args['eos'] == 'adiabatic':
             pressField = ('gas', 'pressure')
@@ -168,6 +189,72 @@ def read_fields(args):
         fields['P'] = args['cs']**2. * fields['rho']
 
     return fields
+
+def readAllFieldsWithOPMD(fields,loadPath,Res,
+    rhoField,velFields,magFields,accFields,pressField=None,fields_are_cons=True,gamma=None):
+    """
+    Reads all fields using the OpenPMD frontend. Data is read in parallel.
+
+    """
+    pencil_shape = FFTHelperFuncs.local_shape
+    if (np.array(FFTHelperFuncs.global_shape, dtype=int) % pencil_shape != 0).any():
+        raise SystemExit(
+            'Data cannot be split evenly among processes. ' +
+            'Abort (for now) - fix me!')
+
+    sys.path.insert(0, "/p/project/shockcloud/src/openPMD-api/inst/lib64/python3.11/site-packages")
+    import openpmd_api as opmd
+    series = opmd.Series(loadPath,opmd.Access.read_only)
+
+    it = series.iterations[int(loadPath[-9:-4])]
+
+    n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // pencil_shape
+    gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
+    gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
+
+    if rank == 0:
+        print("Loading "+ loadPath)
+        print("Chunk dimensions = ", pencil_shape)
+
+    if rhoField is not None:
+        tmp = it.meshes[rhoField][opmd.Record_Component.SCALAR][:,gid_y_s:gid_y_s + pencil_shape[1],gid_x_s:gid_x_s+pencil_shape[0]]
+        series.flush()
+        fields['rho'] = tmp.T
+
+    if velFields is not None:
+        if not fields_are_cons:
+            raise "need to implement prim logic"
+
+        U = np.zeros((3,) + pencil_shape,dtype=np.float64)
+        for i in range(3):
+            tmp = it.meshes[velFields[i]][opmd.Record_Component.SCALAR][:,gid_y_s:gid_y_s + pencil_shape[1],gid_x_s:gid_x_s+pencil_shape[0]]
+            series.flush()
+            U[i] = tmp.T / fields['rho']
+        
+        fields['U'] = U
+
+    if magFields is not None:
+        raise "need to handle B"
+        #B = np.zeros((3,) + pencil_shape,dtype=np.float64)
+        #B[0] = ad[magFields[0]].d
+        #B[1] = ad[magFields[1]].d
+        #B[2] = ad[magFields[2]].d
+        #fields['B'] = B
+
+    if accFields is not None:
+        Acc = np.zeros((3,) + pencil_shape,dtype=np.float64)
+        for i in range(3):
+            tmp = it.meshes[accFields[i]][opmd.Record_Component.SCALAR][:,gid_y_s:gid_y_s + pencil_shape[1],gid_x_s:gid_x_s+pencil_shape[0]]
+            series.flush()
+            Acc[i] = tmp.T
+        fields['Acc'] = Acc
+    
+    if pressField is not None:
+        tmp = it.meshes[pressField][opmd.Record_Component.SCALAR][:,gid_y_s:gid_y_s + pencil_shape[1],gid_x_s:gid_x_s+pencil_shape[0]]
+        series.flush()
+        fields['P'] = (tmp.T - 0.5 * (fields['rho'] * (fields['U'][0]**2 + fields['U'][1]**2 + fields['U'][2]**2))) * (gamma - 1.0)
+
+
 
 def readAllFieldsWithYT(fields,loadPath,Res,
     rhoField,velFields,magFields,accFields,pressField=None):

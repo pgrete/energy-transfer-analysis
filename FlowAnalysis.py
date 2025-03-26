@@ -204,11 +204,26 @@ class FlowAnalysis:
             del Amag, UHarm, USol, UDil
 
         DivU = MPIdivX(self.comm,U)
+        AbsRotU = np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0))
+        self.get_and_write_statistics_to_file(DivU,"DivU")
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
-        self.get_and_write_statistics_to_file(np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0)),"AbsRotU")
+        relAbsDivU = np.sqrt(DivU**2/(DivU**2 + AbsRotU**2))
+        self.get_and_write_statistics_to_file(np.sign(DivU)*relAbsDivU,"relDivU")
+        self.get_and_write_statistics_to_file(relAbsDivU,"relAbsDivU")
+        self.get_and_write_statistics_to_file(AbsRotU,"AbsRotU")
+        
+        self.get_2d_hist('rho-DivU',rho,DivU)
+        self.get_2d_hist('lnrho-DivU',np.log(rho),DivU)
+        self.get_2d_hist('rho-AbsDivU',rho,np.abs(DivU))
+        self.get_2d_hist('lnrho-AbsDivU',np.log(rho),np.abs(DivU))
+        
+        self.get_2d_hist('rho-relDivU',rho,np.sign(DivU)*relAbsDivU)
+        self.get_2d_hist('lnrho-relDivU',np.log(rho),np.sign(DivU)*relAbsDivU)
+        self.get_2d_hist('rho-relAbsDivU',rho,relAbsDivU)
+        self.get_2d_hist('lnrho-relAbsDivU',np.log(rho),relAbsDivU)
 
         self.co_spectrum('PD',P,DivU)
-        del DivU
+        del DivU, AbsRotU, relAbsDivU
 
         if self.eos == 'adiabatic':
             self.gamma = self.gamma
