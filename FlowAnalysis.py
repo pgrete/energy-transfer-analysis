@@ -156,6 +156,7 @@ class FlowAnalysis:
 
         self.get_and_write_statistics_to_file(rho,"rho")
         self.get_and_write_statistics_to_file(np.log(rho),"lnrho")
+        self.get_and_write_statistics_to_file(rho*np.log(rho),"rholnrho")
         self.scalar_power_spectrum('rho',rho)
         self.scalar_power_spectrum('lnrho',np.log(rho))
 
@@ -173,6 +174,8 @@ class FlowAnalysis:
         if Acc is not None:
             Amag = np.sqrt(np.sum(Acc**2.,axis=0))
             self.get_and_write_statistics_to_file(Amag,"a")
+            self.get_and_write_statistics_to_file(rho*(Acc[0]*U[0]+Acc[1]*U[1]+Acc[2]*U[2]),"Espec_inj")
+            self.get_and_write_statistics_to_file(Acc[0]*U[0]+Acc[1]*U[1]+Acc[2]*U[2],"Edens_inj")
             self.vector_power_spectrum('a',Acc)
             self.scalar_power_spectrum('a_x',Acc[0,:,:,:])
             self.scalar_power_spectrum('a_y',Acc[1,:,:,:])
@@ -207,10 +210,12 @@ class FlowAnalysis:
         AbsRotU = np.sqrt(np.sum(MPIrotX(self.comm,U)**2.,axis=0))
         self.get_and_write_statistics_to_file(DivU,"DivU")
         self.get_and_write_statistics_to_file(np.abs(DivU),"AbsDivU")
+        self.get_and_write_statistics_to_file(np.sqrt(rho)*np.abs(DivU),"sqrtRhoAbsDivU")
         relAbsDivU = np.sqrt(DivU**2/(DivU**2 + AbsRotU**2))
         self.get_and_write_statistics_to_file(np.sign(DivU)*relAbsDivU,"relDivU")
         self.get_and_write_statistics_to_file(relAbsDivU,"relAbsDivU")
         self.get_and_write_statistics_to_file(AbsRotU,"AbsRotU")
+        self.get_and_write_statistics_to_file(np.sqrt(rho)*AbsRotU,"sqrtRhoAbsRotU")
         
         self.get_2d_hist('rho-DivU',rho,DivU)
         self.get_2d_hist('lnrho-DivU',np.log(rho),DivU)
