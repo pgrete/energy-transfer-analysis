@@ -305,34 +305,41 @@ class FlowAnalysis:
             print("Done with B terms.",flush=True)
 
 #        # get the integral length scale of B (TODO: technically there's a rho in here)
-#        mag_en_spec = self.outfile['B/PowSpec/Full']
-#        L_B = np.trapz(mag_en_spec[1]/mag_en_spec[0],x=mag_en_spec[0])/np.trapz(mag_en_spec[1],x=mag_en_spec[0])
 #        if self.rank == 0:
+#            mag_en_spec = self.outfile['B/PowSpec/Full']
+#            L_B = np.trapz(mag_en_spec[1]/mag_en_spec[0],x=mag_en_spec[0])/np.trapz(mag_en_spec[1],x=mag_en_spec[0])
 #            print("Integral lengthscale of B is %.3f" % L_B)
+#        else:
+#            L_B = None
+#        L_B = self.comm.bcast(L_B, root=0)
 #
 #        # calculate the large scale B field
 #        B_large = np.zeros((3,) + FFTHelperFuncs.local_shape,dtype=np.float64)
 #        FT_B = np.zeros((3,) + self.localKmag.shape,dtype=np.complex128)
 #        for j in range(3):
-#            FT_B[j] = self.FFT.fft(B[j])
+#            FT_B[j] = self.FFT.forward(B[j], FT_B[j])
 #        FT_G = self.Kernel(L_B*self.res, "Gauss")
 #        for j in range(3):
-#            B_large[j] = (self.FFT.ifft(FT_G * FT_B[j])).real
+#            B_large[j] = (self.FFT.backward(FT_G * FT_B[j], B_large[j])).real
 #
 #        del FT_G, FT_B
 #
 #        self.vector_power_spectrum('B_large',B_large)
+#        B_small = B - B_large
+#        self.vector_power_spectrum('B_small',B_small)
+#        del B_small
+#
 #
 #        # now get the components along and perp to B_large (TODO: substract mean. not important for spec here)
 #        B_large /= np.linalg.norm(B_large,axis=0) # this is now a unit vector
-#        B_par = B * B_large
+#        B_par = np.sum(B * B_large, axis=0) * B_large
 #        B_perp = B - B_par
 #
 #        self.vector_power_spectrum('B_par',B_par)
 #        self.vector_power_spectrum('B_perp',B_perp)
 #        del B_par, B_perp
 #
-#        U_par = U * B_large
+#        U_par = np.sum(U * B_large, axis=0) * B_large
 #        U_perp = U - U_par
 #
 #        self.vector_power_spectrum('U_par',U_par)
@@ -343,62 +350,62 @@ class FlowAnalysis:
 #        
 #        if self.rank == 0:
 #            print("Done with B_large terms.",flush=True)
-
-        self.get_and_write_statistics_to_file(B[0],"B_x")
-        self.get_and_write_statistics_to_file(B[1],"B_y")
-        self.get_and_write_statistics_to_file(B[2],"B_z")
-
-        self.vector_power_spectrum('z_p',U + B/np.sqrt(rho))
-        self.vector_power_spectrum('z_m',U - B/np.sqrt(rho))
-        self.vector_power_spectrum('z_p_dens',np.sqrt(rho)*U + B)
-        self.vector_power_spectrum('z_m_dens',np.sqrt(rho)*U - B)
-
-        self.get_and_write_statistics_to_file(np.sum(B*U,axis=0),"cross_helicity")
-        
-        if self.rank == 0:
-            print("Done with cross-hel terms.",flush=True)
-
-        # this is cheap... and only works for pencil decomp in z axis
-        # np.sum is required for slabs with width > 1
-        if rho.shape[-1] != self.res:
-            raise SystemExit('Calculation of dispersion measures only works for pencils')
-
-        # using subcomms here so that the pencil based slices are not getting mixed
-        DM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(rho,axis=0))/float(self.res)
-        RM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
-        # using chunks so that each process only contributes it's own chunk of data
-        # as all processes have the full information after the allreduce
-        chunkSize = DM.shape[0] // FFTHelperFuncs.FFT.subcomm[0].Get_size()
-        startIdx = FFTHelperFuncs.FFT.subcomm[0].Get_rank() * chunkSize
-        endIdx = (FFTHelperFuncs.FFT.subcomm[0].Get_rank() + 1) * chunkSize
-        self.get_and_write_statistics_to_file(DM[startIdx:endIdx,:],"DM_x")
-        self.get_and_write_statistics_to_file(np.log(DM[startIdx:endIdx,:]),"lnDM_x")
-        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:],"RM_x")
-        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:]/DM[startIdx:endIdx,:],"LOSB_x")
-
-        # using subcomms here so that the pencil based slices are not getting mixed
-        DM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(rho,axis=1))/float(self.res)
-        RM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(B[1]*rho,axis=1))/float(self.res)
-        # using chunks so that each process only contributes it's own chunk of data
-        # as all processes have the full information after the allreduce
-        chunkSize = DM.shape[1] // FFTHelperFuncs.FFT.subcomm[1].Get_size()
-        startIdx = FFTHelperFuncs.FFT.subcomm[1].Get_rank() * chunkSize
-        endIdx = (FFTHelperFuncs.FFT.subcomm[1].Get_rank() + 1) * chunkSize
-        self.get_and_write_statistics_to_file(DM[:,startIdx:endIdx],"DM_y")
-        self.get_and_write_statistics_to_file(np.log(DM[:,startIdx:endIdx]),"lnDM_y")
-        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx],"RM_y")
-        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx]/DM[:,startIdx:endIdx],"LOSB_y")
-
-        DM = np.mean(rho,axis=2)
-        RM = np.mean(B[2]*rho,axis=2)
-        self.get_and_write_statistics_to_file(DM,"DM_z")
-        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_z")
-        self.get_and_write_statistics_to_file(RM,"RM_z")
-        self.get_and_write_statistics_to_file(RM/DM,"LOSB_z")
-
-        del DM, RM
-        if self.rank == 0:
-            print("Done with DM and RM terms.",flush=True)
+#
+#        self.get_and_write_statistics_to_file(B[0],"B_x")
+#        self.get_and_write_statistics_to_file(B[1],"B_y")
+#        self.get_and_write_statistics_to_file(B[2],"B_z")
+#
+#        self.vector_power_spectrum('z_p',U + B/np.sqrt(rho))
+#        self.vector_power_spectrum('z_m',U - B/np.sqrt(rho))
+#        self.vector_power_spectrum('z_p_dens',np.sqrt(rho)*U + B)
+#        self.vector_power_spectrum('z_m_dens',np.sqrt(rho)*U - B)
+#
+#        self.get_and_write_statistics_to_file(np.sum(B*U,axis=0),"cross_helicity")
+#        
+#        if self.rank == 0:
+#            print("Done with cross-hel terms.",flush=True)
+#
+#        # this is cheap... and only works for pencil decomp in z axis
+#        # np.sum is required for slabs with width > 1
+#        if rho.shape[-1] != self.res:
+#            raise SystemExit('Calculation of dispersion measures only works for pencils')
+#
+#        # using subcomms here so that the pencil based slices are not getting mixed
+#        DM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(rho,axis=0))/float(self.res)
+#        RM = FFTHelperFuncs.FFT.subcomm[0].allreduce(np.sum(B[0]*rho,axis=0))/float(self.res)
+#        # using chunks so that each process only contributes it's own chunk of data
+#        # as all processes have the full information after the allreduce
+#        chunkSize = DM.shape[0] // FFTHelperFuncs.FFT.subcomm[0].Get_size()
+#        startIdx = FFTHelperFuncs.FFT.subcomm[0].Get_rank() * chunkSize
+#        endIdx = (FFTHelperFuncs.FFT.subcomm[0].Get_rank() + 1) * chunkSize
+#        self.get_and_write_statistics_to_file(DM[startIdx:endIdx,:],"DM_x")
+#        self.get_and_write_statistics_to_file(np.log(DM[startIdx:endIdx,:]),"lnDM_x")
+#        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:],"RM_x")
+#        self.get_and_write_statistics_to_file(RM[startIdx:endIdx,:]/DM[startIdx:endIdx,:],"LOSB_x")
+#
+#        # using subcomms here so that the pencil based slices are not getting mixed
+#        DM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(rho,axis=1))/float(self.res)
+#        RM = FFTHelperFuncs.FFT.subcomm[1].allreduce(np.sum(B[1]*rho,axis=1))/float(self.res)
+#        # using chunks so that each process only contributes it's own chunk of data
+#        # as all processes have the full information after the allreduce
+#        chunkSize = DM.shape[1] // FFTHelperFuncs.FFT.subcomm[1].Get_size()
+#        startIdx = FFTHelperFuncs.FFT.subcomm[1].Get_rank() * chunkSize
+#        endIdx = (FFTHelperFuncs.FFT.subcomm[1].Get_rank() + 1) * chunkSize
+#        self.get_and_write_statistics_to_file(DM[:,startIdx:endIdx],"DM_y")
+#        self.get_and_write_statistics_to_file(np.log(DM[:,startIdx:endIdx]),"lnDM_y")
+#        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx],"RM_y")
+#        self.get_and_write_statistics_to_file(RM[:,startIdx:endIdx]/DM[:,startIdx:endIdx],"LOSB_y")
+#
+#        DM = np.mean(rho,axis=2)
+#        RM = np.mean(B[2]*rho,axis=2)
+#        self.get_and_write_statistics_to_file(DM,"DM_z")
+#        self.get_and_write_statistics_to_file(np.log(DM),"lnDM_z")
+#        self.get_and_write_statistics_to_file(RM,"RM_z")
+#        self.get_and_write_statistics_to_file(RM/DM,"LOSB_z")
+#
+#        del DM, RM
+#        if self.rank == 0:
+#            print("Done with DM and RM terms.",flush=True)
 
         corrRhoB = self.get_corr_coeff(rho,np.sqrt(B2))
         if self.rank == 0:

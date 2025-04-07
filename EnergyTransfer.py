@@ -217,6 +217,18 @@ class EnergyTransfer:
             for k in range(len(KBins)-1):
                 
                 KBin = "%.2f-%.2f" % (KBins[k],KBins[k+1])
+                if self.comm.Get_rank() == 0:
+                    try:
+                        skip = QBin in Result["WW"]["UU"]["AnyToAny"][KBin].keys()
+                    except KeyError:
+                        skip = False
+                    if skip:
+                        print("Skipping QBin", QBin, "KBin", KBin, "(already done, found UU)")
+                else:
+                    skip = None
+                skip = self.comm.bcast(skip, root=0)
+                if skip:
+                    continue
 
                 #  - W_K * (U dot grad) W_Q - 0.5 W_K W_Q DivU
                 if "UU" in Terms:

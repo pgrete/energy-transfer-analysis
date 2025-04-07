@@ -100,21 +100,21 @@ def read_fields(args):
                              accFields, pressField,order)
 
     elif args['data_type'] == 'AthenaPK':
-        rhoField = ('parthenon', 'prim_density')
-        velFields = [('parthenon', 'prim_velocity_1'),
-                     ('parthenon', 'prim_velocity_2'),
-                     ('parthenon', 'prim_velocity_3'),]
+        rhoField = ('gas', 'density')
+        velFields = [('gas', 'velocity_x'),
+                     ('gas', 'velocity_y'),
+                     ('gas', 'velocity_z'),]
         if args['b']:
-            magFields = [('parthenon', 'prim_magnetic_field_1'),
-                         ('parthenon', 'prim_magnetic_field_2'),
-                         ('parthenon', 'prim_magnetic_field_3'),]
+            magFields = [('gas', 'magnetic_field_x'),
+                         ('gas', 'magnetic_field_y'),
+                         ('gas', 'magnetic_field_z'),]
         if args['forced']:
-            accFields = [('parthenon', 'acc_Acceleration1'),
-                         ('parthenon', 'acc_Acceleration2'),
-                         ('parthenon', 'acc_Acceleration3'),]
+            accFields = [('parthenon', 'acc_0'),
+                         ('parthenon', 'acc_1'),
+                         ('parthenon', 'acc_2'),]
 
         if args['eos'] == 'adiabatic':
-            pressField = ('parthenon', 'prim_pressure')
+            pressField = ('gas', 'pressure')
 
         readAllFieldsWithYT(fields, args['data_path'], args['res'],
                             rhoField, velFields, magFields,
@@ -182,14 +182,19 @@ def readAllFieldsWithYT(fields,loadPath,Res,
             'Abort (for now) - fix me!')
 
     ds = yt.load(loadPath)
-    left_edge = ds.domain_left_edge
-    right_edge = ds.domain_right_edge
+    #left_edge = ds.domain_left_edge
+    #right_edge = ds.domain_right_edge #* 512 / 4096
+    #left_edge = [-0.025, -0.025, 0.01] #ds.domain_left_edge
+    #right_edge = [-0.025 + Res * 9.766e-5, -0.025 + Res * 9.766e-5, 0.01+ Res * 9.766e-5] #* 512 / 4096
+    
+    left_edge = [-0.100, -0.100, -0.100] #ds.domain_left_edge
+    right_edge = [-0.1 + Res * 9.766e-5, -0.1 + Res * 9.766e-5, -0.1+ Res * 9.766e-5] #* 512 / 4096
 
     n_proc = np.array(FFTHelperFuncs.global_shape, dtype=int) // pencil_shape
     gid_x_s = rank // n_proc[1] * pencil_shape[0] # global x start index
     gid_y_s = rank % n_proc[1] * pencil_shape[1] # global y start index
 
-    start_pos = left_edge
+    start_pos = left_edge #+ right_edge
     start_pos[0] += gid_x_s / Res * (right_edge[0] - left_edge[0])
     start_pos[1] += gid_y_s / Res * (right_edge[1] - left_edge[1])
     if rank == 0:
@@ -197,26 +202,26 @@ def readAllFieldsWithYT(fields,loadPath,Res,
         print("Chunk dimensions = ", pencil_shape)
 
 
-    ad = ds.covering_grid(level=0, left_edge=start_pos,dims=FFTHelperFuncs.local_shape)
+    ad = ds.covering_grid(level=ds.max_level, left_edge=start_pos,dims=FFTHelperFuncs.local_shape)
 
     if rhoField is not None:
-        fields['rho'] = ad[rhoField].d
+        fields['rho'] = ad[rhoField].to('code_density').d
 
     if pressField is not None:
-        fields['P'] = ad[pressField].d
+        fields['P'] = ad[pressField].to('code_pressure').d
 
     if velFields is not None:
         U = np.zeros((3,) + pencil_shape,dtype=np.float64)
-        U[0] = ad[velFields[0]].d
-        U[1] = ad[velFields[1]].d
-        U[2] = ad[velFields[2]].d
+        U[0] = ad[velFields[0]].to('code_velocity').d
+        U[1] = ad[velFields[1]].to('code_velocity').d
+        U[2] = ad[velFields[2]].to('code_velocity').d
         fields['U'] = U
 
     if magFields is not None:
         B = np.zeros((3,) + pencil_shape,dtype=np.float64)
-        B[0] = ad[magFields[0]].d
-        B[1] = ad[magFields[1]].d
-        B[2] = ad[magFields[2]].d
+        B[0] = ad[magFields[0]].to('code_magnetic').d
+        B[1] = ad[magFields[1]].to('code_magnetic').d
+        B[2] = ad[magFields[2]].to('code_magnetic').d
         fields['B'] = B
 
     if accFields is not None:
