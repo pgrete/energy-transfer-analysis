@@ -1,3 +1,5 @@
+import os
+os.environ["UCX_LOG_LEVEL"] = "ERROR" # Suppress UCX warnings
 import argparse
 from mpi4py import MPI
 import FFTHelperFuncs
@@ -25,6 +27,16 @@ parser.add_argument('--res',
                     type=int,
                     help='set linear resolution of cubic box')
 
+parser.add_argument("--downsample_factor",
+                    type=int,
+                    default=1,
+                    help='set downsampling factor for data. Must be an integer greater than or equal to 1.')
+
+parser.add_argument('--box_length',
+                    required=True,
+                    type=float,
+                    help='Set linear box size')
+
 parser.add_argument('--type',
                     required=True,
                     type=str,
@@ -34,7 +46,7 @@ parser.add_argument('--type',
 parser.add_argument('--data_type',
                     required=True,
                     type=str,
-                    choices=['Enzo', 'AthenaPP', 'AthenaPPHDF', 'AthenaHDFC', 'Athena'],
+                    choices=['Enzo', 'AthenaPP', 'AthenaPPHDF', 'AthenaHDFC', 'Athena', 'AthenaPK', "AthenaPK_rst"],
                     help='set data cube type')
 
 parser.add_argument('--data_path',
@@ -84,7 +96,7 @@ parser.add_argument('--terms',
                     nargs='+',
                     default=None,
                     choices = ['All', 'Int', 'UU', 'BUT', 'BUP', 'UBT', 'UBPb',
-                               'BB', 'BUPbb', 'UBPbb', 'SS', 'SU', 'US', 'PU', 'FU'],
+                               'BB', 'BUPbb', 'UBPbb', 'SS', 'SU', 'US', 'PU', 'FU', 'H', 'T', "TH"],
                     help='set energy transfer terms to analyze')
 
 parser.add_argument('--binning',
@@ -121,10 +133,14 @@ comm  = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
+if rank == 0:
+    print(f"Total MPI processes: {size}")
+
 # Parse energy transfer arguments
-resolution = args['res']
+resolution = args["res"] // args["downsample_factor"] # // is integer division
+box_length = args['box_length']
 if args['type'] == 'transfer':
-    magnetic_terms = ['BB', 'BUT', 'BUP', 'UBT', 'UBPb']
+    magnetic_terms = ['BB', 'BUT', 'BUP', 'UBT', 'UBPb'] # Why doesn't this include BUPbb and UBPbb?
     terms_to_analyze = args['terms']
 
     if 'All' in terms_to_analyze:
@@ -166,6 +182,8 @@ if args['type'] == 'transfer':
         resolution_exp = np.log(resolution/8)/np.log(2) * 4 + 1
         bins = np.concatenate(
             (np.array([0.]), 4.* 2** ((np.arange(0,resolution_exp + 1) - 1.) /4.)))
+        
+        print(bins)
     
     elif args['binning'] == "test":
         bins = [0.5,1.5,2.5,16.0,26.5,28.5,32.0]
@@ -181,7 +199,7 @@ outfile = args['outfile']
 if args['eos'] == 'adiabatic':
     gamma = args['gamma']
 else:
-    gamma = None
+    gamma = None # This is problematic because gamma is assumed to be float in transfer analysis. Fix me.
 
 # Setup FFTs. Using real->complex transforms for performance in the transfer
 # analysis and because all quantities are also transformed back.
@@ -189,17 +207,17 @@ else:
 # power in real and spectral space is identical without normalizing for
 # power in the complex conjugate modes.
 if args['type'] == 'transfer':
-    FFTHelperFuncs.setup_fft(args['res'], dtype=np.float64)
+    FFTHelperFuncs.setup_fft(resolution, dtype=np.float64)
 else:
-    FFTHelperFuncs.setup_fft(args['res'], dtype=np.complex128)
+    FFTHelperFuncs.setup_fft(resolution, dtype=np.complex128)
 
 # Load data to data dictionary
 fields = read_fields(args)
 
-# Run energy transfer analysis
+args["res"] = resolution
+
 if args['type'] == 'transfer':
-    
-    ET = EnergyTransfer(MPI,resolution,fields,gamma)
+    ET = EnergyTransfer(MPI,resolution,fields,gamma,box_length)
 
     if rank == 0:
         if os.path.isfile(outfile):

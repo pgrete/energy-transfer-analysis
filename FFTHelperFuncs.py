@@ -23,7 +23,7 @@ FFT = None
 local_wavenumbermesh = None
 local_shape = None
 
-def setup_fft(res, dtype=np.complex128):
+def setup_fft(res, dtype=np.complex64):
     """ Setup shared FFT object and properties
         res - linear resolution
     """
@@ -41,10 +41,13 @@ def setup_fft(res, dtype=np.complex128):
 
     time_start = MPI.Wtime()
 
+    if comm.Get_rank() == 0:
+        print("Setting up FFT and wavenumbers...")
+
     N = np.array([res, res, res], dtype=int)
     # using L = 2pi as we work (e.g. when binning) with integer wavenumbers
     L = np.array([2*np.pi, 2*np.pi, 2*np.pi], dtype=float)
-    FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=dtype)
+    FFT = PFFT(comm, N, axes=(0,1,2), collapse=False, dtype=dtype) # here, we can configure how the data is distributed
 
     local_wavenumbermesh = get_local_wavenumbermesh(FFT, L)
     local_shape = newDistArray(FFT,False).shape
@@ -57,23 +60,49 @@ def setup_fft(res, dtype=np.complex128):
             (np.mean(time_elapsed), np.std(time_elapsed)))
         sys.stdout.flush()
 
-
-# from
-# https://bitbucket.org/mpi4py/mpi4py-fft/raw/67dfed980115108c76abb7e865860b5da98674f9/examples/spectral_dns_solver.py
-# with modification for complex numbers
 def get_local_wavenumbermesh(FFT, L):
-    """Returns local wavenumber mesh."""
+    """
+    Returns the local wavenumber mesh for a 3D FFT.
+
+    Parameters
+    ----------
+    FFT : mpi4py_fft.FFT or compatible object
+        The parallel FFT object with methods .local_slice() and .global_shape().
+    L : float or sequence of float
+        Box size. If float, same for all dimensions; if sequence, must be length 3.
+
+    Returns
+    -------
+    Ks : list of np.ndarray
+        Local 3D wavenumber arrays [Kx, Ky, Kz] shaped to FFT.local_shape().
+    """
+    # Ensure L is a sequence of length 3
+    if np.isscalar(L):
+        L = [L]*3
+
+    # Local slice and global shape
     s = FFT.local_slice()
     N = FFT.global_shape()
-    # Set wavenumbers in grid
+
+    # Compute wavenumber arrays for each dimension
     if FFT.dtype() == np.complex128:
         k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N]
-    else:
+    else:  # real-to-complex last axis
         k = [np.fft.fftfreq(n, 1./n).astype(int) for n in N[:-1]]
         k.append(np.fft.rfftfreq(N[-1], 1./N[-1]).astype(int))
-    K = [ki[si] for ki, si in zip(k, s)]
-    Ks = np.meshgrid(*K, indexing='ij', sparse=True)
-    Lp = 2*np.pi/L
+
+    # Select local slices
+    K_local = [ki[si] for ki, si in zip(k, s)]
+
+    # Make 3D sparse meshgrid and convert to list for mutability
+    Ks = list(np.meshgrid(*K_local, indexing='ij', sparse=True))
+
+    # Scale by 2*pi/L
     for i in range(3):
-        Ks[i] = (Ks[i]*Lp[i]).astype(float)
-    return [np.broadcast_to(k, FFT.shape(True)) for k in Ks]
+        Ks[i] = (Ks[i] * (2*np.pi / L[i])).astype(float)
+
+    # Broadcast to full local shape
+    Ks_broadcast = [np.broadcast_to(k, FFT.shape(True)) for k in Ks]
+
+    return Ks_broadcast
+

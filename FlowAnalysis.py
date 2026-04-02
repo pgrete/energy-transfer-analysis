@@ -9,6 +9,8 @@ import os
 from scipy.stats import binned_statistic
 from math import ceil
 from MPIderivHelperFuncs import MPIderiv2, MPIXdotGradY, MPIdivX, MPIdivXY, MPIgradX, MPIrotX
+from mpi4py_fft import PFFT, HDF5File, NCFile
+from DecompHelperFuncs import getHelicalDecomposition
 
 class FlowAnalysis:
     
@@ -33,18 +35,20 @@ class FlowAnalysis:
         else:
             self.global_min_max = {}
 
+        L = args['box_length']
         self.rho = fields['rho']
-        self.U = fields['U']
-        self.B = fields['B']
+        self.U = fields['U']  
+        self.B = fields['B'] 
         self.Acc = fields['Acc']
-        self.P = fields['P']
+        self.P = fields['P']  
         self.eos = args['eos']
         self.gamma = args['gamma']
         self.has_b_fields = args['b']
         self.kernels= args['kernels']
 
-        if self.rank == 0:
-            self.outfile_path = args['outfile']
+        #if self.rank == 0:
+        self.outfile_path = args['outfile']
+        self.helicity_outfile_path = self.outfile_path + '_helicity.h5'
 
         # maximum integer wavenumber
         k_max_int = ceil(self.res*0.5*np.sqrt(3.))
@@ -78,7 +82,7 @@ class FlowAnalysis:
         kernel - one of the following kernel types: Box, Gauss, Sharp
         """
         # set up array of filters widths
-        delta_x = 1/self.res
+        delta_x = 1/self.res # CHANGE 1 -> L TO MAKE IT WORK FOR ARBITRARY BOX SIZES
         m = np.arange(self.res/2 - 1, 0, -1) # array of integer number of grid cells (see Sadek and Aluie eqn. 31)
         k_lm = lm = np.zeros(int(self.res/2)-1)
         lm = np.array(2*m*delta_x) # array of length scales (see Sadek and Aluie eqn. 31)
@@ -124,7 +128,7 @@ class FlowAnalysis:
             self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/Bins', (1,len(k_lm)-1), dtype='f')[0] = k_lm[1:]
             self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/Full', (1,len(k_lm)-1), dtype='f')[0] = KinEnergy
             self.outfile.require_dataset('Filtered_' + kernel + '_KinEnergy/PowSpec/low_pass_energies', (1,len(k_lm)), dtype='f')[0] = epsilon
-
+    
     def run_analysis(self):
 
         rho = self.rho
@@ -134,9 +138,11 @@ class FlowAnalysis:
         P = self.P
         
         if self.rank == 0:
+            print("Running flow analysis")
             self.outfile = h5py.File(self.outfile_path, "w")
 
         self.vector_power_spectrum('u',U)
+        """
         self.vector_power_spectrum('rhoU',np.sqrt(rho)*U)
         self.vector_power_spectrum('rhoThirdU',rho**(1./3.)*U)
 
@@ -261,9 +267,10 @@ class FlowAnalysis:
         AlfMach = np.sqrt(AlfMach2)
 
         self.get_and_write_statistics_to_file(AlfMach,"AlfvenicMach")
+        """
+        self.B_field_analysis()
 
-        self.vector_power_spectrum('B',B)
-
+        """
         # this is cheap... and only works for pencil decomp in z axis
         # np.sum is required for slabs with width > 1
         if rho.shape[-1] != self.res:
@@ -317,6 +324,7 @@ class FlowAnalysis:
 
         self.get_2d_hist('rho-B',rho,np.sqrt(B2))
         self.get_2d_hist('log10rho-B',np.log10(rho),np.sqrt(B2))
+        """
 
         if self.rank == 0:
             self.outfile.close()
@@ -455,7 +463,7 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
             self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
 
-# e.g. (38) in https://arxiv.org/pdf/1101.0150.pdf
+    # e.g. (38) in https://arxiv.org/pdf/1101.0150.pdf
     def co_spectrum(self,name,fieldA,fieldB):
 
         FT_fieldA = newDistArray(self.FFT)
@@ -473,11 +481,14 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/CoSpec/Abs', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Abs
             self.outfile.require_dataset(name + '/CoSpec/Real', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Real
 
-    def vector_power_spectrum(self, name, vec):
-        FT_vec = newDistArray(self.FFT,rank=1)
+    def compute_fft(self, vec):
+        """Compute the distributed FFT of a vector field."""
+        FT_vec = newDistArray(self.FFT, rank=1)
         for i in range(3):
             FT_vec[i] = self.FFT.forward(vec[i], FT_vec[i])
-
+        return FT_vec
+    
+    def vector_power_spectrum_from_fft(self, name, FT_vec):
         FT_vecAbs2 = np.linalg.norm(FT_vec,axis=0)**2.
         PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),FT_vecAbs2.reshape(-1))
         
@@ -502,8 +513,6 @@ class FlowAnalysis:
         FT_SolAbs2 = np.linalg.norm(FT_Sol,axis=0)**2.
         PS_Sol = self.normalized_spectrum(self.localKmag.reshape(-1),FT_SolAbs2.reshape(-1))
 
-
-
         totPowDil = self.comm.allreduce(np.sum(FT_DilAbs2))
         totPowSol = self.comm.allreduce(np.sum(FT_SolAbs2))
         totPowHarm = np.linalg.norm(FT_vec[:,0,0,0],axis=0)**2.
@@ -516,6 +525,96 @@ class FlowAnalysis:
             self.outfile.require_dataset(name + '/PowSpec/TotSol', (1,), dtype='f')[0] = totPowSol
             self.outfile.require_dataset(name + '/PowSpec/TotDil', (1,), dtype='f')[0] = totPowDil
             self.outfile.require_dataset(name + '/PowSpec/TotHarm', (1,), dtype='f')[0] = totPowHarm
+
+    def vector_power_spectrum(self, name, vec):
+        FT_vec = self.compute_fft(vec)
+        self.vector_power_spectrum_from_fft(name, FT_vec)
+
+    
+
+    def B_field_analysis(self):
+        if self.rank == 0:
+            print('Running B field analysis')
+
+        k = np.array(self.localK) # create copy to avoid modifying self.localK
+        # Calculate magnetic power spectrum, (signed) helicity spectrum, absolute helicity spectrum, helicity variance spectrum, helicity field slice, cross-helicity spectrum
+        
+        B_hat = self.compute_fft(self.B)
+        # perform helical decomposition on the B field: 
+        # Bplus_hat, Bminus_hat = getHelicalDecomposition(B_hat, k[0], k[1], k[2])
+        
+        self.vector_power_spectrum_from_fft('B', B_hat)
+        # self.vector_power_spectrum_from_fft('B_plus', Bplus_hat)
+        # self.vector_power_spectrum_from_fft('B_minus', Bminus_hat)
+
+        # Calculate Vector potential in fourier space:
+        cross = np.cross(k, B_hat, axis=0) 
+        k2 = np.sum(k**2, axis=0) 
+        k2[k2 == 0] = 1.0  # avoid division by zero for DC mode
+        A_hat = 1j * cross / k2
+
+        # Get helicity spectrum:
+        helicity_hat = newDistArray(self.FFT, rank=0) # when reducing rank = 1 arrays, the resulting array needs to be specified as rank = 0
+        helicity_hat[:] = np.real(np.sum(A_hat * np.conj(B_hat), axis=0)) # this gets passed real values, but newDistArray type is complex. self.normalized spectrum will raise a warning. Fix me.
+
+        PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),helicity_hat.reshape(-1))
+        
+        # Write helicity spectrum to file
+        name = 'helicity'
+        if self.rank == 0:
+            self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
+            self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
+
+        # Compute absolute helicity spectrum
+
+        PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),np.abs(helicity_hat).reshape(-1))
+        name = 'abs_helicity'
+        if self.rank == 0:
+            self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
+            self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
+
+        # Compute total helicity, write to file
+        tot_helicity = np.real(self.comm.allreduce(np.sum(helicity_hat)))
+        if self.rank == 0:
+            self.outfile.require_dataset(name + '/TotFull', (1,), dtype='f')[0] = tot_helicity
+
+        # delete unused variables
+        del k, k2, cross    
+
+        """
+        # Transform vector potential to real space: 
+        A = newDistArray(self.FFT, False, rank=1)
+        for i in range(3):
+            A[i] = self.FFT.backward(A_hat[i], A[i])
+
+        # Remove imaginary numerical noise:
+        A = np.real(A)
+
+        B = newDistArray(self.FFT, False, rank=1)
+        B[:] = self.B
+
+        helicity = newDistArray(self.FFT, False, rank=0)
+        helicity[:] = np.sum(A*B, axis=0)
+        # write z = 0 slice of helicity field to file
+        if self.rank == 0:
+            print('Writing helicity field to file')
+        helicity.write(self.helicity_outfile_path, 'helicity', 0, global_slice=[slice(None), slice(None), 0])
+        if self.rank == 0:
+            print("Writing to file done")
+
+        # calculate power spectrum for helicity variance:
+        #self.scalar_power_spectrum('helicity_variance', helicity)
+
+        # calculate cross-helicity spectrum:
+        #U_hat = self.compute_fft(self.U)
+        #cross_helicity_hat = newDistArray(self.FFT, rank=0) # when reducing rank = 1 arrays, the resulting array needs to be specified as rank = 0
+        #cross_helicity_hat[:] = np.real(np.sum(U_hat * np.conj(B_hat), axis=0)) # this gets passed real values, but newDistArray type is complex. self.normalized spectrum will raise a warning. Fix me.
+        #PS_Full = self.normalized_spectrum(self.localKmag.reshape(-1),cross_helicity_hat.reshape(-1))
+        #name = 'cross_helicity'
+        #if self.rank == 0:
+        #    self.outfile.require_dataset(name + '/PowSpec/Bins', (1,len(self.k_bins)), dtype='f')[0] = self.k_bins
+        #    self.outfile.require_dataset(name + '/PowSpec/Full', (4,len(self.k_bins)-1), dtype='f')[:,:] = PS_Full
+        """
 
     def get_and_write_statistics_to_file(self,field,name,bounds=None):
         """
@@ -595,7 +694,7 @@ class FlowAnalysis:
 
         cov = self.comm.allreduce(np.sum( (X - meanX)*(Y - meanY)))
 
-        return cov / (stdX*stdY)
+        return cov / (stdX*stdY) # This returns invalid value if stdX or stdY is zero
 
     def get_2d_hist(self,name,X,Y,bounds = None):
         if bounds is None:

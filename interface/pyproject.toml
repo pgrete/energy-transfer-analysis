@@ -1,0 +1,5 @@
+[project]
+name = "energy_transfer_interface"
+version = "0.1.0"
+description = "Utility classes for Parthenon/yt analysis"
+requires-python = ">=3.8"

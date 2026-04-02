@@ -110,3 +110,20 @@ def MPIrotX(comm,X):
                      MPIderiv2(comm,X[0],2) - MPIderiv2(comm,X[2],0),
                      MPIderiv2(comm,X[1],0) - MPIderiv2(comm,X[0],1),
                      ])
+
+def MPIlaplX(comm,X):
+    """ returns  laplacian X = [ d2x_dx2 + d2x_dy2 + d2x_dz2, ... ]
+    """
+    
+    return np.array([MPIderiv2(comm,MPIderiv2(comm,X[0],0),0) + 
+                     MPIderiv2(comm,MPIderiv2(comm,X[0],1),1) + 
+                     MPIderiv2(comm,MPIderiv2(comm,X[0],2),2),
+                     
+                     MPIderiv2(comm,MPIderiv2(comm,X[1],0),0) + 
+                     MPIderiv2(comm,MPIderiv2(comm,X[1],1),1) + 
+                     MPIderiv2(comm,MPIderiv2(comm,X[1],2),2),
+                     
+                     MPIderiv2(comm,MPIderiv2(comm,X[2],0),0) + 
+                     MPIderiv2(comm,MPIderiv2(comm,X[2],1),1) + 
+                     MPIderiv2(comm,MPIderiv2(comm,X[2],2),2),
+                     ])
